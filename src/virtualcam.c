@@ -23,6 +23,7 @@ static int video_nr = -1;
 static const struct v4l2_file_operations vircam_fops = {
     .owner             = THIS_MODULE,
     .open              = v4l2_fh_open,
+    .unlocked_ioctl    = video_ioctl2,
 };
 
 /*
@@ -31,10 +32,104 @@ static const struct v4l2_file_operations vircam_fops = {
 static int vidioc_querycap( struct file * file, void * priv,
                             struct v4l2_capability * cap)
 {
+    printk( KERN_INFO "Virtualcam: querycap called\n");
     strcpy(cap->driver,"virtualcam");
     strcpy(cap->card,"virtualcam");
-    cap->capabilities = V4L2_CAP_VIDEO_CAPTURE;
+    cap->device_caps  = V4L2_CAP_VIDEO_CAPTURE |
+                        V4L2_CAP_STREAMING     |
+                        V4L2_CAP_READWRITE;
+    cap->capabilities = cap->device_caps |
+                        V4L2_CAP_DEVICE_CAPS;
+    return 0;
+}
 
+/*
+ * V4L2 Enum input sources ioctl command callback
+ */
+static int vidioc_enum_input( struct file * file, void * priv,
+                              struct v4l2_input * inp)
+{
+    printk( KERN_INFO "Virtualcam: enum_input with id=%d called\n",inp->index);
+    
+    if(inp->index >= 1 )
+        return -EINVAL;
+    
+    inp->type = V4L2_INPUT_TYPE_CAMERA;
+    sprintf(inp->name,"VirtualCamera %u", inp->index );
+    return 0;
+}
+
+
+/*
+ * V4L2 Get active input index ioctl callback
+ */ 
+static int vidioc_g_input( struct file * file, void * priv,
+                           unsigned int * i )
+{
+   printk( KERN_INFO "Virtualcam: get_input ioctl called\n");
+
+   *i = 0;
+   return 0; 
+}
+
+/*
+ * V4L2 Set active input ioctl callback
+ */ 
+static int vidioc_s_input( struct file * file, void * priv,
+                           unsigned int i )
+{
+    if ( i>= 1 )
+        return -EINVAL;
+    return 0;
+}
+
+/*
+ * V4L2 Enum format ioctl command callback
+ */ 
+static int vidioc_enum_fmt_vid_cap( struct file * file, void * priv,
+                                    struct v4l2_fmtdesc * f)
+{
+    printk( KERN_INFO "Virtualcam: enum_fmt with id=%d called\n",f->index);
+    
+    if( f->index >= 1 )
+        return -EINVAL;
+
+    strcpy(f->description,"RGB24 (LE)");
+    f->pixelformat = V4L2_PIX_FMT_RGB24;
+    return 0;
+}
+
+/*
+ * V4L2 Get format ioctl command callback
+ */ 
+static int vidioc_g_fmt_vid_cap( struct file * file, void * priv,
+                                 struct v4l2_format * f)
+{
+    printk( KERN_INFO "Virtualcam: g_fmt called\n");
+
+    f->fmt.pix.width  = 640;
+    f->fmt.pix.height = 480;
+    f->fmt.pix.field  = V4L2_FIELD_INTERLACED;
+    f->fmt.pix.pixelformat = V4L2_PIX_FMT_RGB24;
+    f->fmt.pix.bytesperline = (640*24) >> 3;
+    f->fmt.pix.sizeimage = 480*f->fmt.pix.bytesperline;
+    f->fmt.pix.colorspace = V4L2_COLORSPACE_SRGB;
+    
+    return 0;
+}
+
+/*
+ * V4L2 Set format ioctl command callback
+ */ 
+static int vidioc_s_fmt_vid_cap( struct file * file, void * priv,
+                                 struct v4l2_format * f)
+{
+    int ret;
+    printk( KERN_INFO "Virtualcam: s_fmt called\n");
+
+    ret = vidioc_g_fmt_vid_cap( file, priv, f);
+    if ( ret < 0 )
+         return ret;
     return 0;
 }
 
@@ -42,7 +137,13 @@ static int vidioc_querycap( struct file * file, void * priv,
  * V4L2 ioctl operations pointer structure
  */
 static const struct v4l2_ioctl_ops vircam_ioctl_ops = {
-    .vidioc_querycap = vidioc_querycap,
+    .vidioc_querycap         = vidioc_querycap,
+    .vidioc_enum_input       = vidioc_enum_input,
+    .vidioc_g_input          = vidioc_g_input,
+    .vidioc_s_input          = vidioc_s_input,
+    .vidioc_enum_fmt_vid_cap = vidioc_enum_fmt_vid_cap,
+    .vidioc_g_fmt_vid_cap    = vidioc_g_fmt_vid_cap,
+    .vidioc_s_fmt_vid_cap    = vidioc_s_fmt_vid_cap, 
 };
 
 /*  
