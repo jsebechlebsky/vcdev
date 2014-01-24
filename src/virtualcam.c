@@ -8,6 +8,8 @@
 #include <media/v4l2-fh.h>
 #include <media/v4l2-event.h>
 #include <media/v4l2-common.h>
+#include <media/videobuf2-core.h>
+#include <media/videobuf2-vmalloc.h>
 
 #define VIRTUAL_CAMERA_MODULE_NAME "virtualcam"
 
@@ -24,6 +26,7 @@ static const struct v4l2_file_operations vircam_fops = {
     .owner             = THIS_MODULE,
     .open              = v4l2_fh_open,
     .unlocked_ioctl    = video_ioctl2,
+    .mmap              = vb2_fop_mmap,
 };
 
 /*
@@ -143,7 +146,15 @@ static const struct v4l2_ioctl_ops vircam_ioctl_ops = {
     .vidioc_s_input          = vidioc_s_input,
     .vidioc_enum_fmt_vid_cap = vidioc_enum_fmt_vid_cap,
     .vidioc_g_fmt_vid_cap    = vidioc_g_fmt_vid_cap,
-    .vidioc_s_fmt_vid_cap    = vidioc_s_fmt_vid_cap, 
+    .vidioc_s_fmt_vid_cap    = vidioc_s_fmt_vid_cap,
+    .vidioc_reqbufs          = vb2_ioctl_reqbufs,
+    .vidioc_create_bufs      = vb2_ioctl_create_bufs,
+    .vidioc_prepare_buf      = vb2_ioctl_prepare_buf,
+    .vidioc_querybuf         = vb2_ioctl_querybuf,
+    .vidioc_qbuf             = vb2_ioctl_qbuf,
+    .vidioc_dqbuf            = vb2_ioctl_dqbuf,
+    .vidioc_streamon         = vb2_ioctl_streamon,
+    .vidioc_streamoff        = vb2_ioctl_streamoff
 };
 
 /*  
@@ -151,9 +162,9 @@ static const struct v4l2_ioctl_ops vircam_ioctl_ops = {
  */
 static const struct video_device virtualcam_video_device_template = {
     .name = "virtualcam",
-    .fops = &vircam_fops,
+    .fops      = &vircam_fops,
     .ioctl_ops = &vircam_ioctl_ops,
-    .release = video_device_release_empty,
+    .release   = video_device_release_empty,
 };
 
 
@@ -164,6 +175,106 @@ struct virtualcam_device {
     struct v4l2_device     v4l2_dev;
     struct video_device    vdev;
     struct mutex           mutex;
+    struct vb2_queue       vb_vidq;
+    spinlock_t             slock;
+};
+
+
+/*----------------------------------------------------
+ * Video buffer 
+ *---------------------------------------------------*/
+
+struct virtualcam_buffer {
+    struct vb2_buffer vb;
+    struct list_head  list;
+};
+
+static int queue_setup( struct vb2_queue * vq,
+                         const struct v4l2_format * fmt,
+                         unsigned int *nbuffers, unsigned int *nplanes,
+                         unsigned int sizes[], void * alloc_ctxs[])
+{
+    unsigned long size;    
+    //struct virtualcam_device * dev = vb2_get_drv_priv(vq);
+    printk( KERN_INFO "queue_setup called\n" );
+
+    if( fmt )
+        size = fmt->fmt.pix.sizeimage;
+    else
+        size = 640*480*3;
+   
+    if( 0 == *nbuffers )
+        *nbuffers = 32;
+ 
+    *nplanes = 1;
+    
+    sizes[0] = size;
+    printk( KERN_INFO "queue_setup completed\n" ); 
+    return 0;
+}
+
+static int buffer_prepare( struct vb2_buffer * vb )
+{
+    unsigned long size;
+    printk( KERN_INFO "buffer_prepare called\n");
+    
+    size = 480*640*3;
+    if( vb2_plane_size(vb,0) < size ){
+        printk( KERN_ERR "data will not fit into buffer");
+        return -EINVAL;
+    }
+
+    vb2_set_plane_payload(vb,0,size);
+    
+    return 0;
+}
+
+static void buffer_queue( struct vb2_buffer * vb )
+{
+    //TODO
+    //struct virtualcam_device * dev;
+    
+
+    printk( KERN_INFO "buffer_queue called\n");
+    
+    //v4l2_get_timestamp(&vb->v4l2_buf.timestamp);
+    vb2_buffer_done(vb, VB2_BUF_STATE_DONE );
+}
+
+static int start_streaming( struct vb2_queue * q, unsigned int count )
+{
+    printk( KERN_INFO "start streaming vb called\n");
+    //TODO
+    return 0;
+}
+
+static int stop_streaming( struct vb2_queue * q )
+{
+    printk( KERN_INFO "stop streaming vb called\n");
+    //TODO
+    return 0;
+}
+
+static void virtualcam_lock( struct vb2_queue * vq )
+{
+    struct virtualcam_device * dev = vb2_get_drv_priv(vq);
+    mutex_lock(&dev->mutex);
+}
+
+static void virtualcam_unlock( struct vb2_queue * vq )
+{
+    struct virtualcam_device * dev = vb2_get_drv_priv(vq);
+    mutex_unlock(&dev->mutex);
+}
+
+static const struct vb2_ops virtualcam_vb_ops = {
+    .queue_setup     = queue_setup,
+    .buf_prepare     = buffer_prepare,
+    .buf_queue       = buffer_queue,
+    .start_streaming = start_streaming,
+    .stop_streaming  = stop_streaming,
+    .wait_prepare    = virtualcam_unlock,
+    .wait_finish     = virtualcam_lock,
 };
 
 static struct virtualcam_device * device = NULL;
@@ -172,6 +283,7 @@ static int __init create_instance( int inst )
 {
     struct virtualcam_device *dev;
     struct video_device      *vfd;
+    struct vb2_queue         *q;
     int ret;
     
     printk(KERN_INFO "create_instance(%d) called\n",inst);
@@ -185,12 +297,29 @@ static int __init create_instance( int inst )
     ret = v4l2_device_register( NULL, &dev->v4l2_dev );
     if (ret)
         goto free_dev;
-    
+
+    spin_lock_init(&dev->slock);   
+ 
+    //Initialize vb2 buffer queue
+    q = &dev->vb_vidq;
+    q->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    q->io_modes = VB2_MMAP | VB2_USERPTR | VB2_READ;
+    q->drv_priv = dev;
+    q->buf_struct_size = sizeof(struct virtualcam_buffer);
+    q->timestamp_type = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC;
+    q->ops = &virtualcam_vb_ops;
+    q->mem_ops = &vb2_vmalloc_memops;
+
+    ret = vb2_queue_init(q);
+    if (ret)
+        goto unreg_dev;
+
     mutex_init(&dev->mutex);
 
     vfd = &dev->vdev;
     *vfd = virtualcam_video_device_template;
     vfd->v4l2_dev = &dev->v4l2_dev; 
+    vfd->queue = q;
     vfd->lock = &dev->mutex;
     video_set_drvdata( vfd, dev);
     
