@@ -8,12 +8,14 @@
 #include <media/v4l2-fh.h>
 #include <media/v4l2-event.h>
 #include <media/v4l2-common.h>
+#include <media/videobuf2-core.h>
 
 struct vc_device {
 	dev_t dev_number;
 	struct v4l2_device     v4l2_dev;
     struct video_device    vdev;
-    struct mutex           mutex;
+    struct vb2_queue       vb_out_vidq;
+    struct mutex           vc_mutex;
 };
 
 struct vc_device * create_vcdevice( size_t idx );

@@ -1,6 +1,7 @@
 #include <linux/module.h>
 #include "vcdevice.h"
 #include "vcioctl.h"
+#include "vcvideobuf.h"
 #include "debug.h"
 
 extern const char * vc_dev_name;
@@ -17,9 +18,9 @@ static const struct v4l2_ioctl_ops vcdev_ioctl_ops = {
     .vidioc_enum_input       = vcdev_enum_input,
     .vidioc_g_input          = vcdev_g_input,
     .vidioc_s_input          = vcdev_s_input,
-//    .vidioc_enum_fmt_vid_cap = vidioc_enum_fmt_vid_cap,
-//    .vidioc_g_fmt_vid_cap    = vidioc_g_fmt_vid_cap,
-//    .vidioc_s_fmt_vid_cap    = vidioc_s_fmt_vid_cap,
+    .vidioc_enum_fmt_vid_cap = vcdev_enum_fmt_vid_cap,
+    .vidioc_g_fmt_vid_cap    = vcdev_g_fmt_vid_cap,
+    .vidioc_s_fmt_vid_cap    = vcdev_s_fmt_vid_cap,
 //    .vidioc_reqbufs          = vb2_ioctl_reqbufs,
 //    .vidioc_create_bufs      = vb2_ioctl_create_bufs,
 //    .vidioc_prepare_buf      = vb2_ioctl_prepare_buf,
@@ -63,6 +64,15 @@ struct vc_device * create_vcdevice(size_t idx)
 		vcdev->v4l2_dev.name);
 
 	//Initialize buffer queue and device structures
+	mutex_init( &vcdev->vc_mutex );
+
+	//Try to initialize output buffer
+	ret = vc_out_videobuf2_setup( vcdev );
+	if( ret ){
+		PRINT_ERROR(" failed to initialize output videobuffer\n");
+		goto vb2_out_init_failed;
+	}
+
 	vdev = &vcdev->vdev;
 	*vdev = vc_video_device_template;
 	snprintf(vdev->name, sizeof(vdev->name),
@@ -78,6 +88,8 @@ struct vc_device * create_vcdevice(size_t idx)
 
 	return vcdev;
 	video_regdev_failure:
+		//TODO vb2 deinit
+	vb2_out_init_failed:
 		v4l2_device_unregister( &vcdev->v4l2_dev );
 	v4l2_registration_failure:
 		kfree(vcdev);
@@ -91,6 +103,7 @@ void destroy_vcdevice( struct vc_device * vcdev )
 	if( !vcdev ){
 		return;
 	}
+	mutex_destroy( &vcdev->vc_mutex );
 	video_unregister_device( &vcdev->vdev );
 	v4l2_device_unregister( &vcdev->v4l2_dev );
 	kfree( vcdev );

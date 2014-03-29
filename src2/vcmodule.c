@@ -1,7 +1,6 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
-#define DEBUG
 #include "debug.h"
 #include "vccontrol.h"
 

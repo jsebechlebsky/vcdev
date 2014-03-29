@@ -6,7 +6,6 @@
 #include <linux/uaccess.h>
 #include "vcdevice.h"
 #include "vccontrol.h"
-#define DEBUG
 #include "debug.h"
 
 static int ctrl_open(struct inode * inode, struct file * file);
@@ -120,7 +119,8 @@ inline struct control_device * alloc_control_device(void)
 inline void destroy_control_device( struct control_device * dev )
 {
 	size_t i;
-	PRINT_DEBUG("destroy control device\n");
+	PRINT_DEBUG("destroy control device, %d active_devices\n",
+		(int) dev->vc_device_count );
 	for( i = 0; i < dev->vc_device_count; i++ ){
 		destroy_vcdevice( dev->vc_devices[i] );
 	}

@@ -15,4 +15,13 @@ int vcdev_g_input( struct file * file, void * priv,
 int vcdev_s_input( struct file * file, void * priv,
                            unsigned int i );
 
+int vcdev_enum_fmt_vid_cap( struct file * file, void * priv,
+                                    struct v4l2_fmtdesc * f);
+
+int vcdev_g_fmt_vid_cap( struct file * file, void * priv,
+                                 struct v4l2_format * f);
+
+int vcdev_s_fmt_vid_cap( struct file * file, void * priv,
+                                 struct v4l2_format * f);
+
 #endif
