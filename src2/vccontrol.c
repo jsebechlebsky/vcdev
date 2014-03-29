@@ -4,6 +4,7 @@
 #include <linux/slab.h>
 #include <linux/device.h>
 #include <linux/uaccess.h>
+#include "vcdevice.h"
 #include "vccontrol.h"
 #define DEBUG
 #include "debug.h"
@@ -23,6 +24,8 @@ struct file_operations ctrl_fops = {
 	.release = ctrl_release,
 	.unlocked_ioctl   = ctrl_ioctl,
 };
+
+extern int devices_max;
 
 struct control_device * ctrldev = NULL;
 
@@ -65,12 +68,76 @@ static long ctrl_ioctl( struct file * file, unsigned int ioctl_cmd,
 	return 0;
 }
 
+int create_new_vcdevice( void )
+{
+	struct vc_device * vcdev;
+	int idx;
+	PRINT_DEBUG( "creating vcdevice\n" );
+	if(! ctrldev ){
+		return -ENODEV;
+	}
+
+	if( ctrldev->vc_device_count > devices_max ){
+		return -ENOMEM;
+	}
+
+	vcdev = create_vcdevice(ctrldev->vc_device_count);
+	if(!vcdev){
+		return -ENODEV;
+	}
+
+	idx = ctrldev->vc_device_count++;
+	ctrldev->vc_devices[idx] = vcdev;
+	return idx;
+}
+
+inline struct control_device * alloc_control_device(void)
+{
+	struct control_device * res;
+	res  = (struct control_device *) kmalloc( sizeof(*res), GFP_KERNEL);
+	if(!res){
+		goto return_res;
+	}
+
+	res->vc_devices = (struct vc_device **) 
+			kmalloc(sizeof(struct vc_device *) * devices_max, GFP_KERNEL);
+	if(!(res->vc_devices)){
+		goto vcdev_alloc_failure;
+	}
+	memset(res->vc_devices, 0x00, sizeof(struct vc_devices *) * devices_max );
+	res->vc_device_count = 0;
+
+	sema_init(&res->reg_semaphore,1);
+	return res;
+
+	vcdev_alloc_failure:
+		kfree(res);
+		res = NULL;
+	return_res:
+		return res;
+}
+
+inline void destroy_control_device( struct control_device * dev )
+{
+	size_t i;
+	PRINT_DEBUG("destroy control device\n");
+	for( i = 0; i < dev->vc_device_count; i++ ){
+		destroy_vcdevice( dev->vc_devices[i] );
+	}
+	kfree(dev->vc_devices);
+	device_destroy( dev->dev_class, dev->dev_number );
+	class_destroy( dev->dev_class );
+	cdev_del( &dev->cdev );
+	unregister_chrdev_region( dev->dev_number, 1);
+	kfree(dev);
+}
+
 int __init create_ctrldev(const char * dev_name)
 {
 	int ret = 0;
 	PRINT_DEBUG("registering control device\n");
 	
-	ctrldev = (struct control_device *) kmalloc(sizeof(*ctrldev),GFP_KERNEL);
+	ctrldev = alloc_control_device();
 	if(!ctrldev){
 		PRINT_ERROR("kmalloc_failed\n");
 		ret = -ENOMEM;
@@ -116,7 +183,7 @@ int __init create_ctrldev(const char * dev_name)
 		class_destroy( ctrldev->dev_class );
 	alloc_chrdev_error:
 	class_create_failure:
-		kfree(ctrldev);
+		destroy_control_device(ctrldev);
 		ctrldev = NULL;
 	kmalloc_failure:
 		return ret;
@@ -124,13 +191,9 @@ int __init create_ctrldev(const char * dev_name)
 
 void __exit destroy_ctrldev(void)
 {
-	PRINT_DEBUG("destroying control device\n");
+	PRINT_DEBUG("module exit called\n");
 	if(ctrldev){
-		device_destroy( ctrldev->dev_class, ctrldev->dev_number );
-		class_destroy( ctrldev->dev_class );
-		cdev_del( &ctrldev->cdev );
-		unregister_chrdev_region(ctrldev->dev_number, 1);
-		kfree(ctrldev);
+		destroy_control_device( ctrldev );
 		ctrldev = NULL;
 	}
 }

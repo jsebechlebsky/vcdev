@@ -1,5 +1,5 @@
 target=vcmod
-vcmod-objs  = vcmodule.o vccontrol.o
+vcmod-objs  = vcmodule.o vccontrol.o vcdevice.o vcioctl.o
 obj-m = $(target).o
 
 all:
