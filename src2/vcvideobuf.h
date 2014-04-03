@@ -28,4 +28,10 @@ struct vc_out_buffer{
 	struct vb2_buffer vb;
 };
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,6,0)
+
+//TODO ioctl and fop helper functions
+
+#endif /* Linux version < 3.6.0 */
+
 #endif

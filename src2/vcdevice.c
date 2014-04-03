@@ -1,7 +1,9 @@
 #include <linux/module.h>
+#include <media/videobuf2-core.h>
 #include "vcdevice.h"
 #include "vcioctl.h"
 #include "vcvideobuf.h"
+#include "vcfb.h"
 #include "debug.h"
 
 extern const char * vc_dev_name;
@@ -10,7 +12,7 @@ static const struct v4l2_file_operations vcdev_fops = {
     .owner             = THIS_MODULE,
     .open              = v4l2_fh_open,
     .unlocked_ioctl    = video_ioctl2,
-    //.mmap              = vb2_fop_mmap,
+    .mmap              = vb2_fop_mmap,
 };
 
 static const struct v4l2_ioctl_ops vcdev_ioctl_ops = {
@@ -21,14 +23,14 @@ static const struct v4l2_ioctl_ops vcdev_ioctl_ops = {
     .vidioc_enum_fmt_vid_cap = vcdev_enum_fmt_vid_cap,
     .vidioc_g_fmt_vid_cap    = vcdev_g_fmt_vid_cap,
     .vidioc_s_fmt_vid_cap    = vcdev_s_fmt_vid_cap,
-//    .vidioc_reqbufs          = vb2_ioctl_reqbufs,
-//    .vidioc_create_bufs      = vb2_ioctl_create_bufs,
-//    .vidioc_prepare_buf      = vb2_ioctl_prepare_buf,
-//    .vidioc_querybuf         = vb2_ioctl_querybuf,
-//    .vidioc_qbuf             = vb2_ioctl_qbuf,
-//    .vidioc_dqbuf            = vb2_ioctl_dqbuf,
-//    .vidioc_streamon         = vb2_ioctl_streamon,
-//    .vidioc_streamoff        = vb2_ioctl_streamoff
+    .vidioc_reqbufs          = vb2_ioctl_reqbufs,
+    .vidioc_create_bufs      = vb2_ioctl_create_bufs,
+    .vidioc_prepare_buf      = vb2_ioctl_prepare_buf,
+    .vidioc_querybuf         = vb2_ioctl_querybuf,
+    .vidioc_qbuf             = vb2_ioctl_qbuf,
+    .vidioc_dqbuf            = vb2_ioctl_dqbuf,
+    .vidioc_streamon         = vb2_ioctl_streamon,
+    .vidioc_streamoff        = vb2_ioctl_streamoff
 };
 
 static const struct video_device vc_video_device_template = {
@@ -50,6 +52,8 @@ struct vc_device * create_vcdevice(size_t idx)
 	if( !vcdev ){
 		goto vcdev_alloc_failure;
 	}
+
+	memset( vcdev, 0x00, sizeof(struct vc_device) );
 
 	//Assign name of v4l2 device 
 	snprintf(vcdev->v4l2_dev.name, sizeof(vcdev->v4l2_dev.name),
@@ -75,6 +79,9 @@ struct vc_device * create_vcdevice(size_t idx)
 
 	vdev = &vcdev->vdev;
 	*vdev = vc_video_device_template;
+	vdev->v4l2_dev = &vcdev->v4l2_dev; 
+    vdev->queue = &vcdev->vb_out_vidq;
+    vdev->lock = &vcdev->vc_mutex;
 	snprintf(vdev->name, sizeof(vdev->name),
 		"%s-%d",vc_dev_name,(int)idx);
 	video_set_drvdata(vdev, vcdev);
@@ -86,7 +93,19 @@ struct vc_device * create_vcdevice(size_t idx)
 	}
 	PRINT_DEBUG("video_register_device successfull\n");
 
+	//Initialize framebuffer device
+	snprintf(vcdev->vc_fb_fname, sizeof(vcdev->vc_fb_fname),
+		"%s_%d_fb",vc_dev_name, (int)idx );
+
+	vcdev->vc_fb_procf = init_framebuffer( (const char *) vcdev->vc_fb_fname );
+	if ( !vcdev->vc_fb_procf ){
+		goto framebuffer_failure;
+	}
+
 	return vcdev;
+	framebuffer_failure:
+		//Probably nothing to do in here
+		destroy_framebuffer( vcdev->vc_fb_fname );
 	video_regdev_failure:
 		//TODO vb2 deinit
 	vb2_out_init_failed:
@@ -103,6 +122,7 @@ void destroy_vcdevice( struct vc_device * vcdev )
 	if( !vcdev ){
 		return;
 	}
+	destroy_framebuffer( vcdev->vc_fb_fname );
 	mutex_destroy( &vcdev->vc_mutex );
 	video_unregister_device( &vcdev->vdev );
 	v4l2_device_unregister( &vcdev->v4l2_dev );

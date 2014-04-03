@@ -24,7 +24,7 @@ int vcdev_enum_input( struct file * file, void * priv,
         return -EINVAL;
     
     inp->type = V4L2_INPUT_TYPE_CAMERA;
-    sprintf(inp->name,"vc_in %u", inp->index );
+    //sprintf(inp->name,"vc_in %u", inp->index );
     return 0;
 }
 
