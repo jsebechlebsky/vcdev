@@ -1,16 +1,21 @@
 #include <linux/module.h>
+#include <linux/spinlock.h>
 #include "vcfb.h"
+#include "vcdevice.h"
 #include "debug.h"
 
 static ssize_t vcfb_write( struct file * file, const char __user * buffer, size_t length,
 	loff_t * offset );
 
+static int vcfb_open( struct inode *inode, struct file *file );
+
 struct file_operations vcfb_fops = {
 	.owner   = THIS_MODULE,
+	.open    = vcfb_open,
 	.write   = vcfb_write,
 };
 
-struct proc_dir_entry* init_framebuffer( const char * proc_fname )
+struct proc_dir_entry* init_framebuffer( const char * proc_fname, struct vc_device * dev )
 {
 	//TODO
 	int ret;
@@ -18,7 +23,7 @@ struct proc_dir_entry* init_framebuffer( const char * proc_fname )
 	ret = 0;
 
 	PRINT_DEBUG( "Creating framebuffer for /dev/%s\n" ,proc_fname );
-	procf = proc_create_data( proc_fname, 0644, NULL , &vcfb_fops, NULL);
+	procf = proc_create_data( proc_fname, 0644, NULL , &vcfb_fops, dev );
 	if( !procf ){
 		PRINT_ERROR("Failed to create procfs entry\n");
 		ret = -ENODEV;
@@ -38,11 +43,57 @@ void destroy_framebuffer( const char * proc_fname )
 	remove_proc_entry( proc_fname, NULL );
 }
 
+static int vcfb_open( struct inode *inode, struct file *file )
+{
+	struct vc_device * dev;
+
+	PRINT_DEBUG("Open framebuffer proc file\n");
+
+	dev = PDE_DATA(inode);
+	if(!dev){
+		PRINT_ERROR("Private data field of PDE not initilized yet.\n");
+		return -ENODEV;
+	}
+
+	file->private_data = dev;
+	return 0;
+}
+
 static ssize_t vcfb_write( struct file * file, const char __user * buffer, size_t length,
 	loff_t * offset )
 {
+	struct vc_device * dev;
+	struct vc_out_queue * q;
+	struct vc_out_buffer * buf;
+	unsigned long flags = 0;
 
-	PRINT_DEBUG("Write %ld Bytes req\n",length);
+	PRINT_DEBUG("Write %ld Bytes req\n", (long)length);
+
+	dev = file->private_data;
+	if(!dev){
+		PRINT_ERROR("Private data field of file not initialized yet.\n");
+		return 0;
+	}
+
+	q = &dev->vc_out_vidq;
+
+	spin_lock_irqsave( &dev->out_q_slock, flags );
+
+	if ( list_empty( &q->active ) ){
+		PRINT_DEBUG("Buffer queue is empty\n");
+		spin_unlock_irqrestore( &dev->out_q_slock, flags );
+		return length;
+	}
+
+	buf = list_entry( q->active.next, struct vc_out_buffer, list );
+	list_del( &buf->list );
+
+	spin_unlock_irqrestore( &dev->out_q_slock, flags );
+
+	//Fill the buffer
+	//TODO real buffer handling
+
+	vb2_buffer_done( &buf->vb, VB2_BUF_STATE_DONE );
 
 	return length;
 }

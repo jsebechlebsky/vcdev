@@ -1,5 +1,6 @@
 #include "vcvideobuf.h"
 #include "debug.h"
+#include <linux/spinlock.h>
 
 static const struct vb2_ops vc_vb2_ops = {
     .queue_setup     = vc_out_queue_setup,
@@ -23,7 +24,7 @@ int vc_out_videobuf2_setup( struct vc_device * dev )
     q->io_modes = VB2_MMAP | VB2_USERPTR | VB2_READ;
     q->drv_priv = dev;
     q->buf_struct_size = sizeof(struct vc_out_buffer);
-    //q->timestamp_type = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC;
+    q->timestamp_type = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC;
     q->ops = &vc_vb2_ops;
     q->mem_ops = &vb2_vmalloc_memops;
 
@@ -88,14 +89,20 @@ int vc_out_buffer_prepare( struct vb2_buffer * vb )
 
 void vc_out_buffer_queue( struct vb2_buffer * vb )
 {
-    //TODO
-    //struct virtualcam_device * dev;
-    
+    struct vc_device * dev;
+    struct vc_out_buffer * buf;
+    struct vc_out_queue * q;
+    unsigned long flags = 0;
 
-   	PRINT_DEBUG( "buffer_queue\n" );
-    
-    //v4l2_get_timestamp(&vb->v4l2_buf.timestamp);
-    //vb2_buffer_done(vb, VB2_BUF_STATE_DONE );
+    PRINT_DEBUG( "buffer_queue\n" );
+
+    dev = vb2_get_drv_priv( vb->vb2_queue );
+    buf = container_of( vb, struct vc_out_buffer, vb );
+    q = &dev->vc_out_vidq;
+
+    spin_lock_irqsave( &dev->out_q_slock, flags );
+    list_add_tail( &buf->list, &q->active );
+    spin_unlock_irqrestore( &dev->out_q_slock, flags );
 }
 
 int vc_start_streaming( struct vb2_queue * q, unsigned int count )

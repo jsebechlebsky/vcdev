@@ -11,11 +11,26 @@
 #include <media/v4l2-common.h>
 #include <media/videobuf2-core.h>
 
+struct vc_out_buffer {
+	struct vb2_buffer vb;
+	struct list_head list;
+};
+
+struct vc_out_queue {
+	struct list_head active;
+	int frame;
+	//TO be completed later
+};
+
 struct vc_device {
 	dev_t dev_number;
 	struct v4l2_device      v4l2_dev;
     struct video_device     vdev;
+
     struct vb2_queue        vb_out_vidq;
+    struct vc_out_queue     vc_out_vidq;
+    spinlock_t              out_q_slock;
+
     char                    vc_fb_fname[16];
     struct proc_dir_entry*  vc_fb_procf;
     struct mutex            vc_mutex;

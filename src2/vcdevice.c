@@ -1,4 +1,5 @@
 #include <linux/module.h>
+#include <linux/spinlock.h>
 #include <media/videobuf2-core.h>
 #include "vcdevice.h"
 #include "vcioctl.h"
@@ -43,6 +44,7 @@ struct vc_device * create_vcdevice(size_t idx)
 {
 	struct vc_device * vcdev;
 	struct video_device * vdev;
+	struct proc_dir_entry * pde;
 	int ret = 0;
 
 	PRINT_DEBUG("creating device\n");
@@ -77,6 +79,9 @@ struct vc_device * create_vcdevice(size_t idx)
 		goto vb2_out_init_failed;
 	}
 
+	spin_lock_init( &vcdev->out_q_slock );
+	INIT_LIST_HEAD( &vcdev->vc_out_vidq.active );
+
 	vdev = &vcdev->vdev;
 	*vdev = vc_video_device_template;
 	vdev->v4l2_dev = &vcdev->v4l2_dev; 
@@ -97,10 +102,11 @@ struct vc_device * create_vcdevice(size_t idx)
 	snprintf(vcdev->vc_fb_fname, sizeof(vcdev->vc_fb_fname),
 		"%s_%d_fb",vc_dev_name, (int)idx );
 
-	vcdev->vc_fb_procf = init_framebuffer( (const char *) vcdev->vc_fb_fname );
-	if ( !vcdev->vc_fb_procf ){
+	pde = init_framebuffer( (const char *) vcdev->vc_fb_fname , vcdev );
+	if ( !pde ){
 		goto framebuffer_failure;
 	}
+	vcdev->vc_fb_procf = pde;
 
 	return vcdev;
 	framebuffer_failure:

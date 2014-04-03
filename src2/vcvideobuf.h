@@ -24,13 +24,11 @@ void vc_outbuf_lock( struct vb2_queue * vq );
 
 void vc_outbuf_unlock( struct vb2_queue * vq );
 
-struct vc_out_buffer{
-	struct vb2_buffer vb;
-};
+//int direct_submit_user_buffer( const char * __user data, size_t length );
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,6,0)
 
-//TODO ioctl and fop helper functions
+//TODO ioctl and fop helper functions for kernel < 3.6.0
 
 #endif /* Linux version < 3.6.0 */
 
