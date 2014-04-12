@@ -99,6 +99,7 @@ void vc_out_buffer_queue( struct vb2_buffer * vb )
     dev = vb2_get_drv_priv( vb->vb2_queue );
     buf = container_of( vb, struct vc_out_buffer, vb );
     q = &dev->vc_out_vidq;
+    buf->filled = 0;
 
     spin_lock_irqsave( &dev->out_q_slock, flags );
     list_add_tail( &buf->list, &q->active );

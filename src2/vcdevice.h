@@ -14,6 +14,7 @@
 struct vc_out_buffer {
 	struct vb2_buffer vb;
 	struct list_head list;
+	size_t filled;
 };
 
 struct vc_out_queue {

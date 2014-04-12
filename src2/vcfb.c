@@ -65,7 +65,13 @@ static ssize_t vcfb_write( struct file * file, const char __user * buffer, size_
 	struct vc_device * dev;
 	struct vc_out_queue * q;
 	struct vc_out_buffer * buf;
+	size_t waiting_bytes;
+	size_t to_be_copyied;
 	unsigned long flags = 0;
+	void * vbuf_ptr;
+
+	waiting_bytes = 640*480*3;
+
 
 	PRINT_DEBUG("Write %ld Bytes req\n", (long)length);
 
@@ -86,14 +92,34 @@ static ssize_t vcfb_write( struct file * file, const char __user * buffer, size_
 	}
 
 	buf = list_entry( q->active.next, struct vc_out_buffer, list );
-	list_del( &buf->list );
+	
 
 	spin_unlock_irqrestore( &dev->out_q_slock, flags );
 
 	//Fill the buffer
 	//TODO real buffer handling
+	to_be_copyied = length;
+	if( (buf->filled + to_be_copyied) > waiting_bytes ){
+		to_be_copyied = waiting_bytes - buf->filled;
+	}
 
-	vb2_buffer_done( &buf->vb, VB2_BUF_STATE_DONE );
+	vbuf_ptr = vb2_plane_vaddr(&buf->vb, 0);
+	if(!vbuf_ptr){
+		PRINT_ERROR("NULL pointer to framebuffer");
+		return length;
+	}
+
+	copy_from_user( vbuf_ptr + buf->filled, (void *) buffer, to_be_copyied );
+	buf->filled += to_be_copyied;
+	PRINT_DEBUG("Received %d/%d B\n", (int)buf->filled, (int)waiting_bytes);
+
+	if ( buf->filled == waiting_bytes ){
+		spin_lock_irqsave( &dev->out_q_slock, flags );
+		list_del( &buf->list );
+		spin_unlock_irqrestore( &dev->out_q_slock, flags );
+		vb2_buffer_done( &buf->vb, VB2_BUF_STATE_DONE );
+		PRINT_DEBUG("Submitting buffer\n");
+	}
 
 	return length;
 }
