@@ -55,17 +55,19 @@ static void fill_v4l2pixfmt( struct v4l2_pix_format * fmt,
 	switch( dev_spec->pix_fmt ){
 		case VCMOD_PIXFMT_RGB24:
 			fmt->pixelformat = V4L2_PIX_FMT_RGB24;
+			fmt->bytesperline = (fmt->width*3);
 			break;
 		case VCMOD_PIXFMT_YUV:
-			fmt->pixelformat = V4L2_PIX_FMT_RGB24;
+			fmt->pixelformat = V4L2_PIX_FMT_YUYV;
+			fmt->bytesperline = (fmt->width) << 1;
 			break;
 		default:
 			fmt->pixelformat = V4L2_PIX_FMT_RGB24;
+			fmt->bytesperline = (fmt->width*3);
 			break;
 	}
 
 	fmt->field  = V4L2_FIELD_INTERLACED;
-	fmt->bytesperline = (fmt->width*3);
     fmt->sizeimage = fmt->height * fmt->bytesperline;
     fmt->colorspace = V4L2_COLORSPACE_SRGB;
 }

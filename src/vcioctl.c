@@ -61,7 +61,7 @@ int vcdev_enum_fmt_vid_cap( struct file * file, void * priv,
         return -EINVAL;
 
     strcpy(f->description,"RGB24 (LE)");
-    f->pixelformat = V4L2_PIX_FMT_RGB24;
+    f->pixelformat = dev->v4l2_fmt[0]->pixelformat;
     return 0;
 }
  

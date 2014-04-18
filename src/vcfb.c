@@ -73,12 +73,18 @@ static ssize_t vcfb_write( struct file * file, const char __user * buffer, size_
 	PRINT_DEBUG("Write %ld Bytes req\n", (long)length);
 
 	dev = file->private_data;
-	waiting_bytes = dev->v4l2_fmt[0]->width * dev->v4l2_fmt[0]->height * 3;
-
 	if(!dev){
 		PRINT_ERROR("Private data field of file not initialized yet.\n");
 		return 0;
 	}
+
+	/*if( dev->v4l2_fmt[0]->pix_fmt == VCMOD_PIXFMT_RGB24 ){
+		waiting_bytes = (dev->v4l2_fmt[0]->width * dev->v4l2_fmt[0]->height) << 1;
+	}else{
+		waiting_bytes = dev->v4l2_fmt[0]->width * dev->v4l2_fmt[0]->height * 3;
+	}*/
+
+	waiting_bytes = dev->v4l2_fmt[0]->sizeimage;
 
 	q = &dev->vc_out_vidq;
 
