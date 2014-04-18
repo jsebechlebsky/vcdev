@@ -7,6 +7,7 @@
 #include "vcdevice.h"
 #include "vccontrol.h"
 #include "debug.h"
+#include "vcmod_api.h"
 
 static int ctrl_open(struct inode * inode, struct file * file);
 static int ctrl_release(struct inode * inode, struct file * file);
@@ -22,6 +23,12 @@ struct file_operations ctrl_fops = {
 	.open    = ctrl_open,
 	.release = ctrl_release,
 	.unlocked_ioctl   = ctrl_ioctl,
+};
+
+struct vcmod_device_spec default_vcdev_spec = {
+	.width   = 640,
+	.height  = 480,
+	.pix_fmt = VCMOD_PIXFMT_RGB24,
 };
 
 extern int devices_max;
@@ -63,11 +70,29 @@ static ssize_t ctrl_write( struct file * file, const char __user * buffer,
 static long ctrl_ioctl( struct file * file, unsigned int ioctl_cmd,
 							 unsigned long ioctl_param )
 {
-	PRINT_DEBUG( "ioctl" );
-	return 0;
+	long ret;
+	struct vcmod_device_spec dev_spec;
+
+	ret = 0;
+	PRINT_DEBUG( "ioctl\n" );
+
+	copy_from_user( &dev_spec, ( void __user * ) ioctl_param, sizeof(struct vcmod_device_spec) );
+
+	switch( ioctl_cmd ){
+		case VCMOD_IOCTL_CREATE_DEVICE:
+			PRINT_DEBUG("Requesing new device\n");
+			create_new_vcdevice( &dev_spec );
+			break;
+		case VCMOD_IOCTL_DESTROY_DEVICE:
+			PRINT_DEBUG("Rquesting destroy of device\n");
+			break;
+		default:
+			ret = -1;
+	}
+	return ret;
 }
 
-int create_new_vcdevice( void )
+int create_new_vcdevice( struct vcmod_device_spec * dev_spec )
 {
 	struct vc_device * vcdev;
 	int idx;
@@ -80,7 +105,12 @@ int create_new_vcdevice( void )
 		return -ENOMEM;
 	}
 
-	vcdev = create_vcdevice(ctrldev->vc_device_count);
+	if( !dev_spec ){
+		vcdev = create_vcdevice(ctrldev->vc_device_count, &default_vcdev_spec );
+	}else{
+		vcdev = create_vcdevice(ctrldev->vc_device_count, dev_spec );
+	}
+
 	if(!vcdev){
 		return -ENODEV;
 	}

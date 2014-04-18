@@ -70,12 +70,11 @@ static ssize_t vcfb_write( struct file * file, const char __user * buffer, size_
 	unsigned long flags = 0;
 	void * vbuf_ptr;
 
-	waiting_bytes = 640*480*3;
-
-
 	PRINT_DEBUG("Write %ld Bytes req\n", (long)length);
 
 	dev = file->private_data;
+	waiting_bytes = dev->v4l2_fmt[0]->width * dev->v4l2_fmt[0]->height * 3;
+
 	if(!dev){
 		PRINT_ERROR("Private data field of file not initialized yet.\n");
 		return 0;

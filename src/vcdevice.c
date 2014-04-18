@@ -40,17 +40,49 @@ static const struct video_device vc_video_device_template = {
     .release   = video_device_release_empty,
 };
 
-struct vc_device * create_vcdevice(size_t idx)
+static void fill_v4l2pixfmt( struct v4l2_pix_format * fmt, 
+	struct vcmod_device_spec * dev_spec )
+{
+	if( !fmt || !dev_spec ){
+		return;
+	}
+
+	memset( fmt, 0x00, sizeof( struct v4l2_pix_format ) );
+	fmt->width = dev_spec->width;
+	fmt->height = dev_spec->height;
+	PRINT_DEBUG("Filling %dx%d\n",dev_spec->width,dev_spec->height);
+
+	switch( dev_spec->pix_fmt ){
+		case VCMOD_PIXFMT_RGB24:
+			fmt->pixelformat = V4L2_PIX_FMT_RGB24;
+			break;
+		case VCMOD_PIXFMT_YUV:
+			fmt->pixelformat = V4L2_PIX_FMT_RGB24;
+			break;
+		default:
+			fmt->pixelformat = V4L2_PIX_FMT_RGB24;
+			break;
+	}
+
+	fmt->field  = V4L2_FIELD_INTERLACED;
+	fmt->bytesperline = (fmt->width*3);
+    fmt->sizeimage = fmt->height * fmt->bytesperline;
+    fmt->colorspace = V4L2_COLORSPACE_SRGB;
+}
+
+struct vc_device * create_vcdevice(size_t idx, struct vcmod_device_spec * dev_spec )
 {
 	struct vc_device * vcdev;
 	struct video_device * vdev;
 	struct proc_dir_entry * pde;
+	struct v4l2_pix_format *fmt;
 	int ret = 0;
 
 	PRINT_DEBUG("creating device\n");
 
 	vcdev = (struct vc_device *) 
 		kmalloc( sizeof( struct vc_device), GFP_KERNEL );
+	PRINT_DEBUG("Allocated at %0X\n",(unsigned int) vcdev);
 	if( !vcdev ){
 		goto vcdev_alloc_failure;
 	}
@@ -108,7 +140,23 @@ struct vc_device * create_vcdevice(size_t idx)
 	}
 	vcdev->vc_fb_procf = pde;
 
+	PRINT_DEBUG("Creating %dx%d\n",dev_spec->width,dev_spec->height);
+
+	//Alloc and set initial format
+	vcdev->v4l2_fmt[0] = (struct v4l2_pix_format *) 
+		kmalloc( sizeof(struct v4l2_pix_format) , GFP_KERNEL );
+	if( !vcdev->v4l2_fmt[0] ){
+		PRINT_ERROR( "Failed to allocate pixel format descriptor\n");
+		goto fmt_alloc_failure;
+	}
+	fmt = vcdev->v4l2_fmt[0];
+	
+	fill_v4l2pixfmt( fmt, dev_spec );
+
+	vcdev->nr_fmts = 1;
+
 	return vcdev;
+	fmt_alloc_failure:
 	framebuffer_failure:
 		//Probably nothing to do in here
 		destroy_framebuffer( vcdev->vc_fb_fname );
@@ -124,6 +172,7 @@ struct vc_device * create_vcdevice(size_t idx)
 
 void destroy_vcdevice( struct vc_device * vcdev )
 {
+	int i;
 	PRINT_DEBUG("destroying vcdevice\n");
 	if( !vcdev ){
 		return;
@@ -132,5 +181,10 @@ void destroy_vcdevice( struct vc_device * vcdev )
 	mutex_destroy( &vcdev->vc_mutex );
 	video_unregister_device( &vcdev->vdev );
 	v4l2_device_unregister( &vcdev->v4l2_dev );
+
+	for( i = 0; i < vcdev->nr_fmts; i++ ){
+		kfree( vcdev->v4l2_fmt[i] );
+	}
+
 	kfree( vcdev );
 }
