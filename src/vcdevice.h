@@ -15,6 +15,19 @@
 #define PIXFMTS_MAX 16
 #define FB_NAME_MAXLENGTH 16
 
+struct vc_in_buffer {
+	void * data;
+	size_t filled;
+	int state;
+};
+
+struct vc_in_queue {
+	struct vc_in_buffer buffers[2];
+	struct vc_in_buffer dummy;
+	struct vc_in_buffer * pending;
+	struct vc_in_buffer * ready;
+};
+
 struct vc_out_buffer {
 	struct vb2_buffer vb;
 	struct list_head list;
@@ -36,7 +49,12 @@ struct vc_device {
 	dev_t dev_number;
 	struct v4l2_device       v4l2_dev;
     struct video_device      vdev;
+    
+    //input buffer
+    struct vc_in_queue       in_queue;
+    spinlock_t               in_q_slock;
 
+    //output buffer
     struct vb2_queue         vb_out_vidq;
     struct vc_out_queue      vc_out_vidq;
     spinlock_t               out_q_slock;
@@ -45,6 +63,9 @@ struct vc_device {
     struct proc_dir_entry*   vc_fb_procf;
     struct mutex             vc_mutex;
 
+    //Submitter thread
+    struct task_struct *     sub_thr_id;
+
     //Format descriptor
     size_t                   nr_fmts;
     struct v4l2_pix_format * v4l2_fmt[PIXFMTS_MAX];       
@@ -52,5 +73,7 @@ struct vc_device {
 
 struct vc_device * create_vcdevice( size_t idx, struct vcmod_device_spec * dev_spec );
 void destroy_vcdevice( struct vc_device * vcdev );
+
+int submitter_thread( void * data );
 
 #endif

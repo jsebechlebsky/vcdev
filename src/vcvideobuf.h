@@ -5,6 +5,12 @@
 #include <media/videobuf2-vmalloc.h>
 #include "vcdevice.h"
 
+void swap_in_queue_buffers( struct vc_in_queue * q );
+
+int vc_in_queue_setup( struct vc_in_queue * q , size_t size );
+
+void vc_in_queue_destroy( struct vc_in_queue * q );
+
 int vc_out_videobuf2_setup( struct vc_device * dev );
 
 int vc_out_queue_setup( struct vb2_queue * vq,

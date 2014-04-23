@@ -25,7 +25,7 @@ static int __init vcdev_init(void)
     	goto error_creating_ctrldev;
     }
 
-    for( i = 0; i < 3; i++ ){
+    for( i = 0; i < 1; i++ ){
         create_new_vcdevice( NULL );
     }
 

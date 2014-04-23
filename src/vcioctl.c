@@ -72,7 +72,7 @@ int vcdev_g_fmt_vid_cap( struct file * file, void * priv,
     PRINT_DEBUG( "IOCTL get_fmt\n");
 
     dev = ( struct vc_device * ) video_drvdata(file);
-    PRINT_DEBUG("Private at %0X\n",(unsigned int) dev);
+    //PRINT_DEBUG("Private at %0X\n",(unsigned int) dev);
 
     /*f->fmt.pix.width  = dev->v4l2_fmt[0]->width;
     f->fmt.pix.height = dev->v4l2_fmt[0]->height;

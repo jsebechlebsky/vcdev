@@ -1,6 +1,7 @@
 #include "vcvideobuf.h"
 #include "debug.h"
 #include <linux/spinlock.h>
+#include <linux/vmalloc.h>
 
 static const struct vb2_ops vc_vb2_ops = {
     .queue_setup     = vc_out_queue_setup,
@@ -11,6 +12,79 @@ static const struct vb2_ops vc_vb2_ops = {
     .wait_prepare    = vc_outbuf_unlock,
     .wait_finish     = vc_outbuf_lock,
 };
+
+inline static int init_vc_in_buffer( struct vc_in_buffer * buf, size_t size )
+{
+    buf->data = vmalloc( size );
+    if(!buf->data){
+        PRINT_ERROR("Failed to allocate input buffer\n");
+        return -ENOMEM;
+    }
+    buf->filled = 0;
+    return 0;
+}
+
+inline static void destroy_vc_in_buffer( struct vc_in_buffer * buf )
+{
+    vfree( buf->data );
+}
+
+void swap_in_queue_buffers( struct vc_in_queue * q )
+{
+    struct vc_in_buffer * tmp;
+    if( !q ){
+        return;
+    }
+    //PRINT_DEBUG("Before swap R:%lX P:%lX",(long unsigned int)q->ready,(long unsigned int) q->pending);
+    tmp = q->pending;
+    q->pending = q->ready;
+    q->ready = tmp;
+    q->pending->filled = 0;
+    //PRINT_DEBUG("After swap R:%lX P:%lX",(long unsigned int)q->ready,(long unsigned int) q->pending);
+    PRINT_DEBUG("Buffers swapped\n");
+}
+
+int vc_in_queue_setup( struct vc_in_queue * q, size_t size )
+{
+    int ret;
+    int i;
+    ret = 0;
+    PRINT_DEBUG( "setting up input queue\n" );
+
+    //Initialize buffers
+    for( i = 0; i < 2; i++ ){
+        ret = init_vc_in_buffer( &q->buffers[i], size );
+        if( ret ){
+            break;
+        }
+    }
+
+    if( ret ){
+        PRINT_ERROR("input queue alloc failure\n");
+        for( ; i>0; i-- ){
+            destroy_vc_in_buffer( &q->buffers[i-1] );
+        }
+        return ret;
+    }
+
+    //Initialize dummy buffer
+    memset( &q->dummy, 0x00, sizeof(struct vc_in_buffer) );
+
+    //Initialize pointers to buffers
+    q->pending = &q->buffers[0];
+    q->ready   = &q->buffers[1];
+
+    return ret;
+}
+
+void vc_in_queue_destroy( struct vc_in_queue * q )
+{
+    int i;
+    PRINT_DEBUG("Destroying input queue\n");
+    for( i = 0; i < 2; i++ ){
+        destroy_vc_in_buffer( &q->buffers[i] );
+    }
+}
 
 int vc_out_videobuf2_setup( struct vc_device * dev )
 {
@@ -108,15 +182,51 @@ void vc_out_buffer_queue( struct vb2_buffer * vb )
 
 int vc_start_streaming( struct vb2_queue * q, unsigned int count )
 {
-    PRINT_DEBUG( "start streaming vb called\n");
-    //TODO
+    struct vc_device * dev;
+    PRINT_DEBUG( "start streaming vb called, count = %d\n", count);
+
+    dev = q->drv_priv;
+
+    //Try to start kernel thread
+    dev->sub_thr_id = kthread_create( submitter_thread, dev, "vcam_submitter");
+    if( !dev->sub_thr_id ){
+        PRINT_ERROR("Failed to create kernel thread\n");
+        return -ECANCELED;
+    }
+
+    wake_up_process(dev->sub_thr_id);
+
     return 0;
 }
 
-int vc_stop_streaming( struct vb2_queue * q )
+int vc_stop_streaming( struct vb2_queue * vb2_q )
 {
+    struct vc_device * dev;
+    struct vc_out_buffer * buf;
+    struct vc_out_queue  * q;
+    unsigned long flags;
     PRINT_DEBUG( "stop streaming vb called\n");
-    //TODO
+
+    flags = 0;
+    dev = vb2_q->drv_priv;
+    q = &dev->vc_out_vidq;
+
+    //Stop running threads
+    if( dev->sub_thr_id ){
+        kthread_stop( dev->sub_thr_id );
+    }
+
+    dev->sub_thr_id = NULL;
+    //Empty buffer queue
+    //spin_lock_irqsave( &dev->out_q_slock, flags );
+    while ( !list_empty( &q->active ) ) {
+            buf = list_entry( q->active.next, struct vc_out_buffer , list);
+            list_del( &buf->list );
+            vb2_buffer_done( &buf->vb, VB2_BUF_STATE_ERROR);
+            PRINT_DEBUG("Throwing out buffer\n");
+    }
+    //spin_unlock_irqrestore( &dev->out_q_slock, flags );
+
     return 0;
 }
 

@@ -2,6 +2,7 @@
 #include <linux/spinlock.h>
 #include "vcfb.h"
 #include "vcdevice.h"
+#include "vcvideobuf.h"
 #include "debug.h"
 
 static ssize_t vcfb_write( struct file * file, const char __user * buffer, size_t length,
@@ -51,7 +52,7 @@ static int vcfb_open( struct inode *inode, struct file *file )
 
 	dev = PDE_DATA(inode);
 	if(!dev){
-		PRINT_ERROR("Private data field of PDE not initilized yet.\n");
+		PRINT_ERROR("Private data field of PDE not initilized.\n");
 		return -ENODEV;
 	}
 
@@ -63,12 +64,12 @@ static ssize_t vcfb_write( struct file * file, const char __user * buffer, size_
 	loff_t * offset )
 {
 	struct vc_device * dev;
-	struct vc_out_queue * q;
-	struct vc_out_buffer * buf;
+	struct vc_in_queue * in_q;
+	struct vc_in_buffer * buf;
 	size_t waiting_bytes;
 	size_t to_be_copyied;
 	unsigned long flags = 0;
-	void * vbuf_ptr;
+	void * data;
 
 	PRINT_DEBUG("Write %ld Bytes req\n", (long)length);
 
@@ -78,29 +79,15 @@ static ssize_t vcfb_write( struct file * file, const char __user * buffer, size_
 		return 0;
 	}
 
-	/*if( dev->v4l2_fmt[0]->pix_fmt == VCMOD_PIXFMT_RGB24 ){
-		waiting_bytes = (dev->v4l2_fmt[0]->width * dev->v4l2_fmt[0]->height) << 1;
-	}else{
-		waiting_bytes = dev->v4l2_fmt[0]->width * dev->v4l2_fmt[0]->height * 3;
-	}*/
-
 	waiting_bytes = dev->v4l2_fmt[0]->sizeimage;
 
-	q = &dev->vc_out_vidq;
+	in_q = &dev->in_queue;
 
-	spin_lock_irqsave( &dev->out_q_slock, flags );
-
-	if ( list_empty( &q->active ) ){
-		PRINT_DEBUG("Buffer queue is empty\n");
-		spin_unlock_irqrestore( &dev->out_q_slock, flags );
-		return length;
+	buf = in_q->pending;
+	if(!buf){
+		PRINT_ERROR("Pending pointer set to NULL\n");
+		return 0;
 	}
-
-	buf = list_entry( q->active.next, struct vc_out_buffer, list );
-	
-
-	spin_unlock_irqrestore( &dev->out_q_slock, flags );
-
 	//Fill the buffer
 	//TODO real buffer handling
 	to_be_copyied = length;
@@ -108,22 +95,21 @@ static ssize_t vcfb_write( struct file * file, const char __user * buffer, size_
 		to_be_copyied = waiting_bytes - buf->filled;
 	}
 
-	vbuf_ptr = vb2_plane_vaddr(&buf->vb, 0);
-	if(!vbuf_ptr){
+	data = buf->data;
+	if(!data){
 		PRINT_ERROR("NULL pointer to framebuffer");
-		return length;
+		return 0;
 	}
 
-	copy_from_user( vbuf_ptr + buf->filled, (void *) buffer, to_be_copyied );
+	copy_from_user( data + buf->filled, (void *) buffer, to_be_copyied );
 	buf->filled += to_be_copyied;
 	PRINT_DEBUG("Received %d/%d B\n", (int)buf->filled, (int)waiting_bytes);
 
 	if ( buf->filled == waiting_bytes ){
-		spin_lock_irqsave( &dev->out_q_slock, flags );
-		list_del( &buf->list );
-		spin_unlock_irqrestore( &dev->out_q_slock, flags );
-		vb2_buffer_done( &buf->vb, VB2_BUF_STATE_DONE );
-		PRINT_DEBUG("Submitting buffer\n");
+		spin_lock_irqsave( &dev->in_q_slock, flags );
+		swap_in_queue_buffers( in_q );
+		spin_unlock_irqrestore( &dev->in_q_slock, flags );
+		PRINT_DEBUG("Swapping buffers\n");
 	}
 
 	return length;
