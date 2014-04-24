@@ -29,6 +29,8 @@ static const struct v4l2_ioctl_ops vcdev_ioctl_ops = {
     .vidioc_g_fmt_vid_cap       = vcdev_g_fmt_vid_cap,
     .vidioc_try_fmt_vid_cap     = vcdev_try_fmt_vid_cap,
     .vidioc_s_fmt_vid_cap       = vcdev_s_fmt_vid_cap,
+    .vidioc_s_parm				= vcdev_g_parm,
+    .vidioc_g_parm              = vcdev_s_parm,
     .vidioc_enum_frameintervals = vcdev_enum_frameintervals,
     .vidioc_reqbufs             = vb2_ioctl_reqbufs,
     .vidioc_create_bufs         = vb2_ioctl_create_bufs,
@@ -49,28 +51,31 @@ static const struct video_device vc_video_device_template = {
 void submit_noinput_buffer(struct vc_out_buffer * buf, 
 	struct vc_device * dev)
 {
-	//void * vbuf_ptr;
-	//size_t size;
-	//size_t rowsize;
-	//size_t rows;
-	//int i,stripe_size;
-	//vbuf_ptr = vb2_plane_vaddr(&buf->vb, 0);
-	//size = dev->v4l2_fmt[0]->sizeimage;
-	//rowsize = dev->v4l2_fmt[0]->bytesperline;
-	//rows = dev->v4l2_fmt[0]->height;
+	void * vbuf_ptr;
+	size_t size;
+	size_t rowsize;
+	size_t rows;
+	int i,stripe_size;
+	struct timeval ts;
+
+	vbuf_ptr = vb2_plane_vaddr(&buf->vb, 0);
+	size = dev->v4l2_fmt[0]->sizeimage;
+	rowsize = dev->v4l2_fmt[0]->bytesperline;
+	rows = dev->v4l2_fmt[0]->height;
+
+	stripe_size = ( rows / 255 );
+	for( i = 0; i < 255; i++ ){
+		memset( vbuf_ptr, i, rowsize * stripe_size );
+		vbuf_ptr += rowsize *  stripe_size; 
+	}
+	if( rows % 255 ){
+		memset( vbuf_ptr, 0xff , rowsize * ( rows % 255 ) );
+	}
 
 	//memset( vbuf_ptr, 0x00, size );
-	//stripe_size = ( rows / 255 );
-	//for( i = 0; i < 255; i++ ){
-	//	memset( vbuf_ptr, i, rowsize * stripe_size );
-	//	vbuf_ptr += rowsize *  stripe_size; 
-	//}
-	//if( rows % 255 ){
-	//	memset( vbuf_ptr, 0xff , rowsize * ( rows % 255 ) );
-	//}
 
-	//memset( vbuf_ptr, 0x00, size );
-
+	do_gettimeofday( &ts );
+	buf->vb.v4l2_buf.timestamp = ts;
 	vb2_buffer_done( &buf->vb, VB2_BUF_STATE_DONE );
 	PRINT_DEBUG("Skipped buffer submitted\n");
 }
@@ -107,6 +112,7 @@ int submitter_thread( void * data )
 	struct vc_out_buffer * buf;
 	struct vc_in_buffer * in_buf;
 	unsigned long flags;
+	int timeout_ms;
 	int timeout;
 	int ret = 0;
 	flags = 0;
@@ -131,19 +137,32 @@ int submitter_thread( void * data )
 		list_del( &buf->list );
 		spin_unlock_irqrestore( &dev->out_q_slock, flags );
 
-		//submit_noinput_buffer( buf, dev );
-		spin_lock_irqsave( &dev->in_q_slock, flags );
-		in_buf = in_q->ready;
-		if(!in_buf){
-			PRINT_ERROR("Ready buffer in input queue has NULL pointer\n");
-			goto unlock_and_continue;
+		if( !dev->fb_isopen ){
+			submit_noinput_buffer( buf, dev );
+		}else{
+			spin_lock_irqsave( &dev->in_q_slock, flags );
+			in_buf = in_q->ready;
+			if(!in_buf){
+				PRINT_ERROR("Ready buffer in input queue has NULL pointer\n");
+				goto unlock_and_continue;
+			}
+			submit_copy_buffer( buf, in_buf );
+			unlock_and_continue:
+			spin_unlock_irqrestore( &dev->in_q_slock, flags);
 		}
-		submit_copy_buffer( buf, in_buf );
-		unlock_and_continue:
-		spin_unlock_irqrestore( &dev->in_q_slock, flags);
 
 		have_a_nap:
-			timeout = msecs_to_jiffies(33);
+			if( !dev->output_fps.denominator ){
+				dev->output_fps.numerator = 1001;
+				dev->output_fps.denominator = 30;
+			}
+			timeout_ms = dev->output_fps.numerator / dev->output_fps.denominator;
+			if( !timeout_ms ){
+				dev->output_fps.numerator = 1001;
+				dev->output_fps.denominator = 60;
+				timeout_ms = dev->output_fps.numerator / dev->output_fps.denominator;
+			}
+			timeout = msecs_to_jiffies( timeout_ms );
 			schedule_timeout_interruptible(timeout);
 
 			if( kthread_should_stop() ){
@@ -230,6 +249,7 @@ struct vc_device * create_vcdevice(size_t idx, struct vcmod_device_spec * dev_sp
 
 	spin_lock_init( &vcdev->out_q_slock );
 	spin_lock_init( &vcdev->in_q_slock );
+	spin_lock_init( &vcdev->in_fh_slock );
 
 	INIT_LIST_HEAD( &vcdev->vc_out_vidq.active );
 
@@ -258,6 +278,7 @@ struct vc_device * create_vcdevice(size_t idx, struct vcmod_device_spec * dev_sp
 		goto framebuffer_failure;
 	}
 	vcdev->vc_fb_procf = pde;
+	vcdev->fb_isopen   = 0;
 
 	PRINT_DEBUG("Creating %dx%d\n",dev_spec->width,dev_spec->height);
 
@@ -285,6 +306,9 @@ struct vc_device * create_vcdevice(size_t idx, struct vcmod_device_spec * dev_sp
 		PRINT_ERROR("Failed to initialize input buffer\n");
 		goto input_buffer_failure;
 	}
+
+	vcdev->output_fps.numerator = 1001;
+	vcdev->output_fps.denominator = 30;
 	
 	return vcdev;
 	fmt_alloc_failure:

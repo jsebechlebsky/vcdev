@@ -4,6 +4,7 @@
 #include <linux/proc_fs.h>
 #include <linux/mutex.h>
 #include <linux/videodev2.h>
+#include <linux/time.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-ioctl.h>
 #include <media/v4l2-fh.h>
@@ -18,6 +19,7 @@
 struct vc_in_buffer {
 	void * data;
 	size_t filled;
+	struct timeval ts;
 	int state;
 };
 
@@ -53,11 +55,15 @@ struct vc_device {
     //input buffer
     struct vc_in_queue       in_queue;
     spinlock_t               in_q_slock;
+    spinlock_t               in_fh_slock;
+    unsigned char            fb_isopen;
 
     //output buffer
     struct vb2_queue         vb_out_vidq;
     struct vc_out_queue      vc_out_vidq;
     spinlock_t               out_q_slock;
+    //Output framerate
+    struct v4l2_fract        output_fps;
 
     char                     vc_fb_fname[FB_NAME_MAXLENGTH];
     struct proc_dir_entry*   vc_fb_procf;

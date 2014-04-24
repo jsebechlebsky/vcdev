@@ -8,11 +8,13 @@
 static ssize_t vcfb_write( struct file * file, const char __user * buffer, size_t length,
 	loff_t * offset );
 
-static int vcfb_open( struct inode *inode, struct file *file );
+static int vcfb_open( struct inode *ind, struct file *file );
+static int vcfb_release( struct inode * ind, struct file * file );
 
 struct file_operations vcfb_fops = {
 	.owner   = THIS_MODULE,
 	.open    = vcfb_open,
+	.release = vcfb_release,
 	.write   = vcfb_write,
 };
 
@@ -44,19 +46,40 @@ void destroy_framebuffer( const char * proc_fname )
 	remove_proc_entry( proc_fname, NULL );
 }
 
-static int vcfb_open( struct inode *inode, struct file *file )
+static int vcfb_open( struct inode *ind, struct file *file )
 {
 	struct vc_device * dev;
+	unsigned long flags = 0;
 
 	PRINT_DEBUG("Open framebuffer proc file\n");
 
-	dev = PDE_DATA(inode);
+	dev = PDE_DATA(ind);
 	if(!dev){
 		PRINT_ERROR("Private data field of PDE not initilized.\n");
 		return -ENODEV;
 	}
 
+	spin_lock_irqsave( &dev->in_fh_slock , flags );
+	if( dev->fb_isopen ){
+		spin_unlock_irqrestore( &dev->in_fh_slock , flags );
+		return -EBUSY;
+	}
+	dev->fb_isopen = 1;
+	spin_unlock_irqrestore( &dev->in_fh_slock , flags);
+
 	file->private_data = dev;
+
+	return 0;
+}
+
+static int vcfb_release( struct inode * ind, struct file * file )
+{
+	struct vc_device * dev;
+    unsigned long flags = 0;
+	dev = PDE_DATA(ind);
+	spin_lock_irqsave( &dev->in_fh_slock , flags );
+	dev->fb_isopen = 0;
+	spin_unlock_irqrestore( &dev->in_fh_slock , flags );
 	return 0;
 }
 
@@ -74,7 +97,7 @@ static ssize_t vcfb_write( struct file * file, const char __user * buffer, size_
 	PRINT_DEBUG("Write %ld Bytes req\n", (long)length);
 
 	dev = file->private_data;
-	if(!dev){
+	if( !dev ){
 		PRINT_ERROR("Private data field of file not initialized yet.\n");
 		return 0;
 	}
@@ -84,7 +107,7 @@ static ssize_t vcfb_write( struct file * file, const char __user * buffer, size_
 	in_q = &dev->in_queue;
 
 	buf = in_q->pending;
-	if(!buf){
+	if( !buf ){
 		PRINT_ERROR("Pending pointer set to NULL\n");
 		return 0;
 	}
@@ -96,9 +119,13 @@ static ssize_t vcfb_write( struct file * file, const char __user * buffer, size_
 	}
 
 	data = buf->data;
-	if(!data){
+	if( !data ){
 		PRINT_ERROR("NULL pointer to framebuffer");
 		return 0;
+	}
+
+	if( !buf->filled ){
+		do_gettimeofday( &buf->ts );
 	}
 
 	copy_from_user( data + buf->filled, (void *) buffer, to_be_copyied );

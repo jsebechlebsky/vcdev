@@ -30,4 +30,10 @@ int vcdev_s_fmt_vid_cap( struct file * file, void * priv,
 int vcdev_enum_frameintervals(struct file *filp, void *priv,
                                      struct v4l2_frmivalenum *fival);
 
+int vcdev_g_parm(struct file *fil, void * priv,
+                struct v4l2_streamparm *a);
+
+int vcdev_s_parm(struct file *fil, void * priv,
+                struct v4l2_streamparm *a);
+
 #endif

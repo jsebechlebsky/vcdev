@@ -1,3 +1,4 @@
+#include <linux/videodev2.h>
 #include "vcioctl.h"
 #include "vcdevice.h"
 #include "debug.h"
@@ -110,7 +111,7 @@ int vcdev_s_fmt_vid_cap( struct file * file, void * priv,
     return 0;
 }
 
-int vcdev_enum_frameintervals(struct file *filp, void *priv,
+int vcdev_enum_frameintervals(struct file *file, void *priv,
                                      struct v4l2_frmivalenum *fival)
 {
     PRINT_DEBUG("IOCTL enum_frameintervals\n");
@@ -119,10 +120,61 @@ int vcdev_enum_frameintervals(struct file *filp, void *priv,
         return -EINVAL;
     }
 
-    fival->type = V4L2_FRMIVAL_TYPE_DISCRETE;
-    fival->discrete.numerator = 1001;
-    fival->discrete.denominator = 30;
+    fival->type = V4L2_FRMIVAL_TYPE_CONTINUOUS;
+    //fival->discrete.numerator = 1001;
+    //fival->discrete.denominator = 30;
 
+    return 0;
+}
 
+int vcdev_g_parm(struct file *file, void * priv,
+                struct v4l2_streamparm * sp)
+{
+    struct vc_device * dev;
+    struct v4l2_captureparm * cp;
+
+    PRINT_DEBUG("IOCTL g_parm\n");
+
+    if( sp->type != V4L2_BUF_TYPE_VIDEO_CAPTURE ){
+        return -EINVAL;
+    }
+   
+    cp = &sp->parm.capture;
+    dev = ( struct vc_device * ) video_drvdata( file );
+
+    memset( cp, 0x00, sizeof( struct v4l2_captureparm ) );
+    cp->capability   = V4L2_CAP_TIMEPERFRAME;
+    cp->timeperframe = dev->output_fps;
+    cp->extendedmode = 0;
+    cp->readbuffers  = 2;
+
+    return 0;
+}
+
+int vcdev_s_parm(struct file *file, void * priv,
+                struct v4l2_streamparm * sp)
+{
+    struct vc_device * dev;
+    struct v4l2_captureparm * cp;
+
+    PRINT_DEBUG("IOCTL s_parm\n");
+
+    if( sp->type != V4L2_BUF_TYPE_VIDEO_CAPTURE ){
+        return -EINVAL;
+    }
+
+    cp = &sp->parm.capture;
+    dev = ( struct vc_device * ) video_drvdata( file );
+
+    if( !cp->timeperframe.numerator || !cp->timeperframe.denominator ){
+        cp->timeperframe = dev->output_fps;
+    }else{
+        dev->output_fps = cp->timeperframe;
+    }
+    cp->extendedmode = 0;
+    cp->readbuffers  = 2;
+
+    PRINT_DEBUG( "FPS set to %d/%d\n", cp->timeperframe.numerator, 
+        cp->timeperframe.denominator );
     return 0;
 }
