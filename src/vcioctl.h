@@ -21,7 +21,13 @@ int vcdev_enum_fmt_vid_cap( struct file * file, void * priv,
 int vcdev_g_fmt_vid_cap( struct file * file, void * priv,
                                  struct v4l2_format * f);
 
+int vcdev_try_fmt_vid_cap( struct file * file, void * priv,
+                                 struct v4l2_format * f);
+
 int vcdev_s_fmt_vid_cap( struct file * file, void * priv,
                                  struct v4l2_format * f);
+
+int vcdev_enum_frameintervals(struct file *filp, void *priv,
+                                     struct v4l2_frmivalenum *fival);
 
 #endif

@@ -1,5 +1,6 @@
 #include <linux/module.h>
 #include <linux/spinlock.h>
+#include <linux/time.h>
 #include <media/videobuf2-core.h>
 #include "vcdevice.h"
 #include "vcioctl.h"
@@ -12,27 +13,31 @@ extern const char * vc_dev_name;
 static const struct v4l2_file_operations vcdev_fops = {
     .owner             = THIS_MODULE,
     .open              = v4l2_fh_open,
+    .release           = vb2_fop_release,
+    .read              = vb2_fop_read,
+    .poll              = vb2_fop_poll,
     .unlocked_ioctl    = video_ioctl2,
     .mmap              = vb2_fop_mmap,
-    .release           = v4l2_fh_release,
 };
 
 static const struct v4l2_ioctl_ops vcdev_ioctl_ops = {
-    .vidioc_querycap         = vcdev_querycap,
-    .vidioc_enum_input       = vcdev_enum_input,
-    .vidioc_g_input          = vcdev_g_input,
-    .vidioc_s_input          = vcdev_s_input,
-    .vidioc_enum_fmt_vid_cap = vcdev_enum_fmt_vid_cap,
-    .vidioc_g_fmt_vid_cap    = vcdev_g_fmt_vid_cap,
-    .vidioc_s_fmt_vid_cap    = vcdev_s_fmt_vid_cap,
-    .vidioc_reqbufs          = vb2_ioctl_reqbufs,
-    .vidioc_create_bufs      = vb2_ioctl_create_bufs,
-    .vidioc_prepare_buf      = vb2_ioctl_prepare_buf,
-    .vidioc_querybuf         = vb2_ioctl_querybuf,
-    .vidioc_qbuf             = vb2_ioctl_qbuf,
-    .vidioc_dqbuf            = vb2_ioctl_dqbuf,
-    .vidioc_streamon         = vb2_ioctl_streamon,
-    .vidioc_streamoff        = vb2_ioctl_streamoff
+    .vidioc_querycap            = vcdev_querycap,
+    .vidioc_enum_input          = vcdev_enum_input,
+    .vidioc_g_input             = vcdev_g_input,
+    .vidioc_s_input             = vcdev_s_input,
+    .vidioc_enum_fmt_vid_cap    = vcdev_enum_fmt_vid_cap,
+    .vidioc_g_fmt_vid_cap       = vcdev_g_fmt_vid_cap,
+    .vidioc_try_fmt_vid_cap     = vcdev_try_fmt_vid_cap,
+    .vidioc_s_fmt_vid_cap       = vcdev_s_fmt_vid_cap,
+    .vidioc_enum_frameintervals = vcdev_enum_frameintervals,
+    .vidioc_reqbufs             = vb2_ioctl_reqbufs,
+    .vidioc_create_bufs         = vb2_ioctl_create_bufs,
+    .vidioc_prepare_buf         = vb2_ioctl_prepare_buf,
+    .vidioc_querybuf            = vb2_ioctl_querybuf,
+    .vidioc_qbuf                = vb2_ioctl_qbuf,
+    .vidioc_dqbuf               = vb2_ioctl_dqbuf,
+    .vidioc_streamon            = vb2_ioctl_streamon,
+    .vidioc_streamoff           = vb2_ioctl_streamoff
 };
 
 static const struct video_device vc_video_device_template = {
@@ -75,6 +80,7 @@ static void submit_copy_buffer( struct vc_out_buffer * out_buf,
 {
 	void * in_vbuf_ptr;
 	void * out_vbuf_ptr;
+	struct timeval ts;
 
 	in_vbuf_ptr = in_buf->data;
 	if(!in_vbuf_ptr){
@@ -87,6 +93,8 @@ static void submit_copy_buffer( struct vc_out_buffer * out_buf,
 		return;
 	}
 	memcpy( out_vbuf_ptr, in_vbuf_ptr, in_buf->filled );
+	do_gettimeofday( &ts );
+	out_buf->vb.v4l2_buf.timestamp = ts;
 	vb2_buffer_done( &out_buf->vb, VB2_BUF_STATE_DONE );
 	PRINT_DEBUG("Copy buffer submitted, %dB\n", (int)in_buf->filled);
 }

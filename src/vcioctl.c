@@ -87,6 +87,17 @@ int vcdev_g_fmt_vid_cap( struct file * file, void * priv,
     return 0;
 }
 
+int vcdev_try_fmt_vid_cap( struct file * file, void * priv,
+                                 struct v4l2_format * f)
+{
+    struct vc_device * dev;
+    PRINT_DEBUG( "IOCTL try_fmt\n");
+
+    dev = ( struct vc_device * ) video_drvdata( file );
+    vcdev_g_fmt_vid_cap( file, priv, f );
+    return 0;
+}
+
 int vcdev_s_fmt_vid_cap( struct file * file, void * priv,
                                  struct v4l2_format * f)
 {
@@ -96,5 +107,22 @@ int vcdev_s_fmt_vid_cap( struct file * file, void * priv,
     ret = vcdev_g_fmt_vid_cap( file, priv, f);
     if ( ret < 0 )
          return ret;
+    return 0;
+}
+
+int vcdev_enum_frameintervals(struct file *filp, void *priv,
+                                     struct v4l2_frmivalenum *fival)
+{
+    PRINT_DEBUG("IOCTL enum_frameintervals\n");
+
+    if( fival->index > 0 ){
+        return -EINVAL;
+    }
+
+    fival->type = V4L2_FRMIVAL_TYPE_DISCRETE;
+    fival->discrete.numerator = 1001;
+    fival->discrete.denominator = 30;
+
+
     return 0;
 }
