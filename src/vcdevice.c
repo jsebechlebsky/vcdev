@@ -10,6 +10,19 @@
 
 extern const char * vc_dev_name;
 
+static const struct vc_device_format vcdev_supported_fmts[] = {
+	{
+		.name      = "RGB24 (LE)",
+		.fourcc    = V4L2_PIX_FMT_RGB24,
+		.bit_depth = 24,
+	},
+	{
+		.name      = "YUV 4:2:2 (YUYV)",
+		.fourcc    = V4L2_PIX_FMT_YUYV,
+		.bit_depth = 16,
+	},
+};
+
 static const struct v4l2_file_operations vcdev_fops = {
     .owner             = THIS_MODULE,
     .open              = v4l2_fh_open,
@@ -32,6 +45,7 @@ static const struct v4l2_ioctl_ops vcdev_ioctl_ops = {
     .vidioc_s_parm				= vcdev_g_parm,
     .vidioc_g_parm              = vcdev_s_parm,
     .vidioc_enum_frameintervals = vcdev_enum_frameintervals,
+    .vidioc_enum_framesizes     = vcdev_enum_framesizes,
     .vidioc_reqbufs             = vb2_ioctl_reqbufs,
     .vidioc_create_bufs         = vb2_ioctl_create_bufs,
     .vidioc_prepare_buf         = vb2_ioctl_prepare_buf,
@@ -59,9 +73,9 @@ void submit_noinput_buffer(struct vc_out_buffer * buf,
 	struct timeval ts;
 
 	vbuf_ptr = vb2_plane_vaddr(&buf->vb, 0);
-	size = dev->v4l2_fmt[0]->sizeimage;
-	rowsize = dev->v4l2_fmt[0]->bytesperline;
-	rows = dev->v4l2_fmt[0]->height;
+	size = dev->output_format.sizeimage;
+	rowsize = dev->output_format.bytesperline;
+	rows = dev->output_format.height;
 
 	stripe_size = ( rows / 255 );
 	for( i = 0; i < 255; i++ ){
@@ -77,7 +91,7 @@ void submit_noinput_buffer(struct vc_out_buffer * buf,
 	do_gettimeofday( &ts );
 	buf->vb.v4l2_buf.timestamp = ts;
 	vb2_buffer_done( &buf->vb, VB2_BUF_STATE_DONE );
-	PRINT_DEBUG("Skipped buffer submitted\n");
+	//PRINT_DEBUG("Skipped buffer submitted\n");
 }
 
 static void submit_copy_buffer( struct vc_out_buffer * out_buf,
@@ -101,7 +115,7 @@ static void submit_copy_buffer( struct vc_out_buffer * out_buf,
 	do_gettimeofday( &ts );
 	out_buf->vb.v4l2_buf.timestamp = ts;
 	vb2_buffer_done( &out_buf->vb, VB2_BUF_STATE_DONE );
-	PRINT_DEBUG("Copy buffer submitted, %dB\n", (int)in_buf->filled);
+	//PRINT_DEBUG("Copy buffer submitted, %dB\n", (int)in_buf->filled);
 }
 
 int submitter_thread( void * data )
@@ -125,7 +139,7 @@ int submitter_thread( void * data )
 	while(1){
 		//Do something and sleep
 
-		PRINT_DEBUG("tick");
+		//PRINT_DEBUG("tick");
 
 		spin_lock_irqsave( &dev->out_q_slock, flags );
 		if ( list_empty( &q->active ) ){
@@ -154,14 +168,15 @@ int submitter_thread( void * data )
 		have_a_nap:
 			if( !dev->output_fps.denominator ){
 				dev->output_fps.numerator = 1001;
-				dev->output_fps.denominator = 30;
+				dev->output_fps.denominator = 30000;
 			}
-			timeout_ms = dev->output_fps.numerator / dev->output_fps.denominator;
+			timeout_ms = dev->output_fps.denominator / dev->output_fps.numerator;
 			if( !timeout_ms ){
 				dev->output_fps.numerator = 1001;
-				dev->output_fps.denominator = 60;
-				timeout_ms = dev->output_fps.numerator / dev->output_fps.denominator;
+				dev->output_fps.denominator = 60000;
+				timeout_ms = dev->output_fps.denominator / dev->output_fps.numerator;
 			}
+			//PRINT_DEBUG("sleep %d\n",timeout_ms);
 			timeout = msecs_to_jiffies( timeout_ms );
 			schedule_timeout_interruptible(timeout);
 
@@ -172,6 +187,20 @@ int submitter_thread( void * data )
 
 	PRINT_DEBUG("Submitter thread finished");
 	return ret;
+}
+
+int check_supported_pixfmt( struct vc_device * dev, unsigned int fourcc )
+{
+    int i;
+    for( i = 0; i < dev->nr_fmts; i++ ){
+        if( dev->out_fmts[i].fourcc == fourcc)
+            break;
+    }
+
+    if( i == dev->nr_fmts ){
+        return 0;
+    }
+    return 1;
 }
 
 static void fill_v4l2pixfmt( struct v4l2_pix_format * fmt, 
@@ -190,20 +219,22 @@ static void fill_v4l2pixfmt( struct v4l2_pix_format * fmt,
 		case VCMOD_PIXFMT_RGB24:
 			fmt->pixelformat = V4L2_PIX_FMT_RGB24;
 			fmt->bytesperline = (fmt->width*3);
+			fmt->colorspace = V4L2_COLORSPACE_SRGB;
 			break;
-		case VCMOD_PIXFMT_YUV:
+		case VCMOD_PIXFMT_YUYV:
 			fmt->pixelformat = V4L2_PIX_FMT_YUYV;
 			fmt->bytesperline = (fmt->width) << 1;
+			fmt->colorspace = V4L2_COLORSPACE_SMPTE170M;
 			break;
 		default:
 			fmt->pixelformat = V4L2_PIX_FMT_RGB24;
 			fmt->bytesperline = (fmt->width*3);
+			fmt->colorspace = V4L2_COLORSPACE_SRGB;
 			break;
 	}
 
 	fmt->field  = V4L2_FIELD_INTERLACED;
     fmt->sizeimage = fmt->height * fmt->bytesperline;
-    fmt->colorspace = V4L2_COLORSPACE_SRGB;
 }
 
 struct vc_device * create_vcdevice(size_t idx, struct vcmod_device_spec * dev_spec )
@@ -211,8 +242,7 @@ struct vc_device * create_vcdevice(size_t idx, struct vcmod_device_spec * dev_sp
 	struct vc_device * vcdev;
 	struct video_device * vdev;
 	struct proc_dir_entry * pde;
-	struct v4l2_pix_format *fmt;
-	int ret = 0;
+	int i,ret = 0;
 
 	PRINT_DEBUG("creating device\n");
 
@@ -282,39 +312,44 @@ struct vc_device * create_vcdevice(size_t idx, struct vcmod_device_spec * dev_sp
 
 	PRINT_DEBUG("Creating %dx%d\n",dev_spec->width,dev_spec->height);
 
-	
+	//Setup conversion capabilities
+
+	//vcdev->conv_res_on = 1;	
 
 	//Alloc and set initial format
-	vcdev->v4l2_fmt[0] = (struct v4l2_pix_format *) 
-		kmalloc( sizeof(struct v4l2_pix_format) , GFP_KERNEL );
-	if( !vcdev->v4l2_fmt[0] ){
-		PRINT_ERROR( "Failed to allocate pixel format descriptor\n");
-		goto fmt_alloc_failure;
+	if( vcdev->conv_pixfmt_on ){
+		for( i = 0; i < ARRAY_SIZE( vcdev_supported_fmts ); i++ ){
+			vcdev->out_fmts[i] = vcdev_supported_fmts[i];
+		}
+		vcdev->nr_fmts = i;
+	}else{
+		if( dev_spec && dev_spec->pix_fmt == VCMOD_PIXFMT_YUYV ){
+			vcdev->out_fmts[0] = vcdev_supported_fmts[1];
+		}else{
+			vcdev->out_fmts[0] = vcdev_supported_fmts[0];
+		}
+		vcdev->nr_fmts = 1;
 	}
-	fmt = vcdev->v4l2_fmt[0];
+	//vcdev->out_fmts[0] = vcdev_supported_fmts[0];
 	
-	fill_v4l2pixfmt( fmt, dev_spec );
-
-	vcdev->nr_fmts = 1;
+	fill_v4l2pixfmt( &vcdev->output_format, dev_spec );
+	fill_v4l2pixfmt( &vcdev->input_format, dev_spec );
 
 	vcdev->sub_thr_id = NULL;
 
 	//Init input 
 	ret = vc_in_queue_setup( &vcdev->in_queue ,
-		vcdev->v4l2_fmt[0]->sizeimage );
+		vcdev->output_format.sizeimage );
 	if( ret ){
 		PRINT_ERROR("Failed to initialize input buffer\n");
 		goto input_buffer_failure;
 	}
 
 	vcdev->output_fps.numerator = 1001;
-	vcdev->output_fps.denominator = 30;
+	vcdev->output_fps.denominator = 30000;
 	
 	return vcdev;
-	fmt_alloc_failure:
-		//vc_in_queue_destroy( &vcdev->in_queue );
 	input_buffer_failure:
-		kfree( &vcdev->v4l2_fmt[0] );
 	framebuffer_failure:
 		//Probably nothing to do in here
 		destroy_framebuffer( vcdev->vc_fb_fname );
@@ -330,7 +365,6 @@ struct vc_device * create_vcdevice(size_t idx, struct vcmod_device_spec * dev_sp
 
 void destroy_vcdevice( struct vc_device * vcdev )
 {
-	int i;
 	PRINT_DEBUG("destroying vcdevice\n");
 	if( !vcdev ){
 		return;
@@ -343,10 +377,6 @@ void destroy_vcdevice( struct vc_device * vcdev )
 	mutex_destroy( &vcdev->vc_mutex );
 	video_unregister_device( &vcdev->vdev );
 	v4l2_device_unregister( &vcdev->v4l2_dev );
-
-	for( i = 0; i < vcdev->nr_fmts; i++ ){
-		kfree( vcdev->v4l2_fmt[i] );
-	}
 
 	kfree( vcdev );
 }

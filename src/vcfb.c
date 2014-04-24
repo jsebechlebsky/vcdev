@@ -102,7 +102,7 @@ static ssize_t vcfb_write( struct file * file, const char __user * buffer, size_
 		return 0;
 	}
 
-	waiting_bytes = dev->v4l2_fmt[0]->sizeimage;
+	waiting_bytes = dev->input_format.sizeimage;
 
 	in_q = &dev->in_queue;
 

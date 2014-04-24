@@ -36,4 +36,8 @@ int vcdev_g_parm(struct file *fil, void * priv,
 int vcdev_s_parm(struct file *fil, void * priv,
                 struct v4l2_streamparm *a);
 
+int vcdev_enum_framesizes(struct file *filp, void *priv,
+                                     struct v4l2_frmsizeenum * fsize);
+
+
 #endif

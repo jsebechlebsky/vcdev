@@ -13,7 +13,7 @@
 #include <media/videobuf2-core.h>
 #include "vcmod_api.h"
 
-#define PIXFMTS_MAX 16
+#define PIXFMTS_MAX 4
 #define FB_NAME_MAXLENGTH 16
 
 struct vc_in_buffer {
@@ -42,44 +42,53 @@ struct vc_out_queue {
 	//TO be completed later
 };
 
-struct vc_device_format{
-	struct list_head active;
-	struct v4l2_pix_format v4l2_fmt;
+struct vc_device_format {
+	char * name;
+	int    fourcc;
+	int    bit_depth;
 };
 
 struct vc_device {
 	dev_t dev_number;
-	struct v4l2_device       v4l2_dev;
-    struct video_device      vdev;
+	struct v4l2_device        v4l2_dev;
+    struct video_device       vdev;
     
     //input buffer
-    struct vc_in_queue       in_queue;
-    spinlock_t               in_q_slock;
-    spinlock_t               in_fh_slock;
-    unsigned char            fb_isopen;
+    struct vc_in_queue        in_queue;
+    spinlock_t                in_q_slock;
+    spinlock_t                in_fh_slock;
+    unsigned char             fb_isopen;
 
     //output buffer
-    struct vb2_queue         vb_out_vidq;
-    struct vc_out_queue      vc_out_vidq;
-    spinlock_t               out_q_slock;
+    struct vb2_queue          vb_out_vidq;
+    struct vc_out_queue       vc_out_vidq;
+    spinlock_t                out_q_slock;
     //Output framerate
-    struct v4l2_fract        output_fps;
+    struct v4l2_fract         output_fps;
 
-    char                     vc_fb_fname[FB_NAME_MAXLENGTH];
-    struct proc_dir_entry*   vc_fb_procf;
-    struct mutex             vc_mutex;
+    char                      vc_fb_fname[FB_NAME_MAXLENGTH];
+    struct proc_dir_entry*    vc_fb_procf;
+    struct mutex              vc_mutex;
 
     //Submitter thread
-    struct task_struct *     sub_thr_id;
+    struct task_struct *      sub_thr_id;
 
     //Format descriptor
-    size_t                   nr_fmts;
-    struct v4l2_pix_format * v4l2_fmt[PIXFMTS_MAX];       
+    size_t                    nr_fmts;
+    struct vc_device_format   out_fmts[PIXFMTS_MAX];  
+
+    struct v4l2_pix_format    output_format;
+    struct v4l2_pix_format    input_format; 
+
+    //Conversion switches
+    int                       conv_pixfmt_on;
+    int                       conv_res_on;    
 };
 
 struct vc_device * create_vcdevice( size_t idx, struct vcmod_device_spec * dev_spec );
 void destroy_vcdevice( struct vc_device * vcdev );
 
 int submitter_thread( void * data );
+int check_supported_pixfmt( struct vc_device * dev, unsigned int fourcc );
 
 #endif

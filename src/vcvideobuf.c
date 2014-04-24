@@ -112,16 +112,19 @@ int vc_out_queue_setup( struct vb2_queue * vq,
                          unsigned int sizes[], void * alloc_ctxs[])
 {
     unsigned long size;    
+    struct vc_device * dev;
     //struct virtualcam_device * dev = vb2_get_drv_priv(vq);
     PRINT_DEBUG( "queue_setup\n" );
+
+    dev = vb2_get_drv_priv( vq );
 
     if( fmt )
         size = fmt->fmt.pix.sizeimage;
     else
-        size = 640*480*3;
+        size = dev->output_format.sizeimage;
    
     if( 0 == *nbuffers )
-        *nbuffers = 32;
+        *nbuffers = 8;
  
     *nplanes = 1;
     
@@ -133,19 +136,23 @@ int vc_out_queue_setup( struct vb2_queue * vq,
 int vc_out_buffer_prepare( struct vb2_buffer * vb )
 {
     unsigned long size;
-    void * data;
-    char color;
-    int i;
-    PRINT_DEBUG( "buffer_prepare\n");
+    struct vc_device * dev;
+    //void * data;
+    //char color;
+    //int i;
+
+    //PRINT_DEBUG( "buffer_prepare\n");
     
-    size = 480*640*3;
+    dev = vb2_get_drv_priv( vb->vb2_queue );
+
+    size = dev->output_format.sizeimage;
     if( vb2_plane_size(vb,0) < size ){
         PRINT_ERROR( KERN_ERR "data will not fit into buffer\n" );
         return -EINVAL;
     }
 
     vb2_set_plane_payload(vb,0,size);
-    data = (void*)vb2_plane_vaddr(vb,0);
+    /*data = (void*)vb2_plane_vaddr(vb,0);
     if(!data){
       PRINT_DEBUG( "Strange thing happened in the buffer prepare\n");
       goto error;
@@ -157,7 +164,7 @@ int vc_out_buffer_prepare( struct vb2_buffer * vb )
     	data+=640*2*3;
     }
     
-    error:
+    error:*/
     return 0;
 }
 
@@ -168,7 +175,7 @@ void vc_out_buffer_queue( struct vb2_buffer * vb )
     struct vc_out_queue * q;
     unsigned long flags = 0;
 
-    PRINT_DEBUG( "buffer_queue\n" );
+    //PRINT_DEBUG( "buffer_queue\n" );
 
     dev = vb2_get_drv_priv( vb->vb2_queue );
     buf = container_of( vb, struct vc_out_buffer, vb );
