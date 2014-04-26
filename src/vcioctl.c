@@ -103,6 +103,9 @@ int vcdev_try_fmt_vid_cap( struct file * file, void * priv,
             PRINT_DEBUG("Unsupported\n");
      }
 
+    /*v4l_bound_align_image(&f->fmt.pix.width, 64, 1280, 2,
+                            &f->fmt.pix.height, 64, 720, 0, 0);*/
+
      if( !dev->conv_res_on ){
             f->fmt.pix.width = dev->output_format.width;
             f->fmt.pix.height = dev->output_format.height;
@@ -154,7 +157,8 @@ int vcdev_enum_frameintervals(struct file *file, void *priv,
         char str[5];
         memcpy((void *)str,(void *)&fival->pixel_format, 4);
         str[4] = 0;
-        PRINT_DEBUG("IOCTL enum_frameintervals(%d), fmt(%s)\n",fival->index, str);
+        PRINT_DEBUG("IOCTL enum_frameintervals(%d), fmt(%s) %dx%d\n",fival->index,
+            str,fival->width,fival->height);
     #endif
 
     
@@ -274,7 +278,13 @@ int vcdev_enum_framesizes(struct file *filp, void *priv,
             return -EINVAL;
         }
 
-        fsize->type = V4L2_FRMSIZE_TYPE_CONTINUOUS;
+        fsize->type = V4L2_FRMSIZE_TYPE_STEPWISE;
+        fsize->stepwise.min_width  = 64;
+        fsize->stepwise.max_width  = 1280;
+        fsize->stepwise.step_width =  2;
+        fsize->stepwise.min_height = 64;
+        fsize->stepwise.max_height = 720;
+        fsize->stepwise.step_height =  2;
     }
 
     return 0;

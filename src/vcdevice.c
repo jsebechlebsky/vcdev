@@ -10,6 +10,12 @@
 
 extern const char * vc_dev_name;
 
+struct __attribute__ ((__packed__)) rgb_struct{
+	unsigned char r;
+	unsigned char g;
+	unsigned char b;
+};
+
 static const struct vc_device_format vcdev_supported_fmts[] = {
 	{
 		.name      = "RGB24 (LE)",
@@ -138,7 +144,7 @@ void submit_noinput_buffer(struct vc_out_buffer * buf,
 		}	
 
 		yuyv_tmp = 0x80ff80ff;
-		while( (void *)yuyv_ptr < (void *)(vbuf_ptr + size) ){
+		while( (void *)yuyv_ptr < (void *)((void *)vbuf_ptr + size) ){
 			*yuyv_ptr = yuyv_tmp;
 			yuyv_ptr++;
 		}
@@ -161,6 +167,51 @@ void submit_noinput_buffer(struct vc_out_buffer * buf,
 	buf->vb.v4l2_buf.timestamp = ts;
 	vb2_buffer_done( &buf->vb, VB2_BUF_STATE_DONE );
 	//PRINT_DEBUG("Skipped buffer submitted\n");
+}
+
+void copy_scale( unsigned char * dst, unsigned char * src, struct vc_device * dev)
+{
+	uint32_t dst_height = dev->output_format.height;
+	uint32_t dst_width  = dev->output_format.width;
+	uint32_t src_height = dev->input_format.height;
+	uint32_t src_width  = dev->input_format.width;
+	uint32_t ratio_height = ( (src_height << 16) / dst_height) + 1;
+	uint32_t ratio_width;
+	int i,j,tmp1,tmp2;
+
+	PRINT_DEBUG("Scaling from %dB to %dB, s=%ld\n", 
+		dev->input_format.sizeimage, dev->output_format.sizeimage,
+		sizeof(struct rgb_struct));
+	
+	if( dev->output_format.pixelformat == V4L2_PIX_FMT_YUYV ){
+		
+		uint32_t * yuyv_dst = (uint32_t *)dst;
+		uint32_t * yuyv_src = (uint32_t *)src;
+		dst_width >>= 1;
+		src_width >>= 1;
+		ratio_width  = ( (src_width  << 16) / dst_width ) + 1;
+		for( i = 0; i < dst_height; i++ ){
+			tmp1 = ((i*ratio_height) >> 16);
+			for( j = 0; j < dst_width; j++ ){
+				tmp2 = ((j*ratio_width) >> 16);
+				yuyv_dst[ (i*dst_width) + j] = yuyv_src[ (tmp1*src_width) + tmp2];
+			}
+		}
+
+	}else if(dev->output_format.pixelformat == V4L2_PIX_FMT_RGB24){
+
+		struct rgb_struct * yuyv_dst = (struct rgb_struct *)dst;
+		struct rgb_struct * yuyv_src = (struct rgb_struct *)src;
+		ratio_width  = ( (src_width  << 16) / dst_width ) + 1;
+		for( i = 0; i < dst_height; i++ ){
+			tmp1 = ((i*ratio_height) >> 16);
+			for( j = 0; j < dst_width; j++ ){
+				tmp2 = ((j*ratio_width) >> 16);
+				yuyv_dst[ (i*dst_width) + j] = yuyv_src[ (tmp1*src_width) + tmp2];
+			}
+		}
+		
+	}
 }
 
 static void convert_rgb24_buf_to_yuyv( unsigned char * dst, unsigned char * src, size_t pixel_count )
@@ -202,9 +253,21 @@ void submit_copy_buffer( struct vc_out_buffer * out_buf,
 		PRINT_ERROR("Output buffer is NULL\n");
 		return;
 	}
+
 	if( dev->output_format.pixelformat == dev->input_format.pixelformat ){
-		memcpy( out_vbuf_ptr, in_vbuf_ptr, in_buf->filled );	
-	}else{
+
+	   	if(dev->output_format.width == dev->input_format.width &&
+			dev->output_format.height == dev->input_format.height ){
+
+				memcpy( out_vbuf_ptr, in_vbuf_ptr, in_buf->filled );
+
+			}else{
+
+				copy_scale( out_vbuf_ptr, in_vbuf_ptr, dev );
+
+			}	
+
+	}else {
 		int pixel_count = dev->input_format.height * dev->input_format.width;
 		if( dev->input_format.pixelformat == V4L2_PIX_FMT_YUYV ){
 			convert_yuyv_buf_to_rgb24( out_vbuf_ptr, in_vbuf_ptr, pixel_count );
@@ -415,8 +478,8 @@ struct vc_device * create_vcdevice(size_t idx, struct vcmod_device_spec * dev_sp
 
 	//Setup conversion capabilities
 
-	//vcdev->conv_res_on = 1;	
-	vcdev->conv_pixfmt_on = 1;
+	vcdev->conv_res_on = 1;	
+	//vcdev->conv_pixfmt_on = 1;
 
 	//Alloc and set initial format
 	if( vcdev->conv_pixfmt_on ){

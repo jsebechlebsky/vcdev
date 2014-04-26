@@ -122,6 +122,8 @@ int vc_out_queue_setup( struct vb2_queue * vq,
         size = fmt->fmt.pix.sizeimage;
     else
         size = dev->output_format.sizeimage;
+
+    PRINT_DEBUG("sizeimage set to %ld\n",size);
    
     if( 0 == *nbuffers )
         *nbuffers = 8;
