@@ -62,6 +62,47 @@ static const struct video_device vc_video_device_template = {
     .release   = video_device_release_empty,
 };
 
+static inline void rgb24_to_yuyv( void *dst, void *src )
+{
+	unsigned char * rgb  = ( unsigned char * ) src;
+	unsigned char * yuyv = ( unsigned char * ) dst;
+	yuyv[0] = (( 66 * rgb[0] + 129 * rgb[1] +  25 * rgb[2]) >> 8) + 16;
+	yuyv[1] = ((-38 * rgb[0] -  74 * rgb[1] + 112 * rgb[2]) >> 8) + 128;
+	yuyv[2] = (( 66 * rgb[3] + 129 * rgb[4] +  25 * rgb[5]) >> 8) + 16;
+	yuyv[3] = ((112 * rgb[0] -  94 * rgb[1] -  18 * rgb[2]) >> 8) + 128;
+}
+
+static inline void yuyv_to_rgb24( void *dst, void *src )
+{
+	unsigned char * rgb  = ( unsigned char * ) dst;
+	unsigned char * yuyv = ( unsigned char * ) src;
+	int16_t r,g,b,c1,c2,d,e;
+	c1 = yuyv[0] - 16;
+	 d = yuyv[1] - 128;
+	c2 = yuyv[2] - 16;
+     e = yuyv[3] - 128;
+
+	r = (298 * c1 + 409 * e + 128) >> 8;
+	g = (298 * c1 - 100 * d - 208 * e + 128) >> 8;
+	b = (298 * c1 + 516 * d + 128) >> 8;
+	r = r > 255 ? 255 : r; r = r < 0 ? 0 : r;
+	g = g > 255 ? 255 : g; g = g < 0 ? 0 : g;
+	b = b > 255 ? 255 : b; b = b < 0 ? 0 : b;
+	rgb[0] = (unsigned char) r;
+	rgb[1] = (unsigned char) g;
+	rgb[2] = (unsigned char) b;
+
+	r = (298 * c2 + 409 * e + 128) >> 8;
+	g = (298 * c2 - 100 * d - 208 * e + 128) >> 8;
+	b = (298 * c2 + 516 * d + 128) >> 8;
+	r = r > 255 ? 255 : r; r = r < 0 ? 0 : r;
+	g = g > 255 ? 255 : g; g = g < 0 ? 0 : g;
+	b = b > 255 ? 255 : b; b = b < 0 ? 0 : b;
+	rgb[3] = (unsigned char) r;
+	rgb[4] = (unsigned char) g;
+	rgb[5] = (unsigned char) b;
+}
+
 void submit_noinput_buffer(struct vc_out_buffer * buf, 
 	struct vc_device * dev)
 {
@@ -69,21 +110,49 @@ void submit_noinput_buffer(struct vc_out_buffer * buf,
 	size_t size;
 	size_t rowsize;
 	size_t rows;
-	int i,stripe_size;
+	int i,j,stripe_size;
 	struct timeval ts;
+	int32_t *yuyv_ptr;
+	int32_t yuyv_tmp;
+	unsigned char * yuyv_helper = (unsigned char *) &yuyv_tmp;
 
 	vbuf_ptr = vb2_plane_vaddr(&buf->vb, 0);
+	yuyv_ptr = vbuf_ptr;
 	size = dev->output_format.sizeimage;
 	rowsize = dev->output_format.bytesperline;
 	rows = dev->output_format.height;
 
 	stripe_size = ( rows / 255 );
-	for( i = 0; i < 255; i++ ){
-		memset( vbuf_ptr, i, rowsize * stripe_size );
-		vbuf_ptr += rowsize *  stripe_size; 
-	}
-	if( rows % 255 ){
-		memset( vbuf_ptr, 0xff , rowsize * ( rows % 255 ) );
+	if( dev->output_format.pixelformat == V4L2_PIX_FMT_YUYV){
+
+		
+		yuyv_tmp = 0x80808080;
+
+		for( i = 0; i < 255; i++ ){
+			yuyv_helper[0] = (unsigned char)i;
+			yuyv_helper[2] = (unsigned char)i;
+			for( j = 0; j < ((rowsize*stripe_size) >> 2); j++){
+				*yuyv_ptr = yuyv_tmp;
+				yuyv_ptr++;
+			}
+		}	
+
+		yuyv_tmp = 0x80ff80ff;
+		while( (void *)yuyv_ptr < (void *)(vbuf_ptr + size) ){
+			*yuyv_ptr = yuyv_tmp;
+			yuyv_ptr++;
+		}
+
+	}else{
+
+		for( i = 0; i < 255; i++ ){
+			memset( vbuf_ptr, i, rowsize * stripe_size );
+			vbuf_ptr += rowsize *  stripe_size; 
+		}
+
+		if( rows % 255 ){
+			memset( vbuf_ptr, 0xff , rowsize * ( rows % 255 ) );
+		}
 	}
 
 	//memset( vbuf_ptr, 0x00, size );
@@ -94,8 +163,30 @@ void submit_noinput_buffer(struct vc_out_buffer * buf,
 	//PRINT_DEBUG("Skipped buffer submitted\n");
 }
 
-static void submit_copy_buffer( struct vc_out_buffer * out_buf,
-	struct vc_in_buffer * in_buf )
+static void convert_rgb24_buf_to_yuyv( unsigned char * dst, unsigned char * src, size_t pixel_count )
+{
+	int i;
+	pixel_count >>= 1;
+	for( i = 0; i < pixel_count; i++ ){
+		rgb24_to_yuyv(dst,src);
+		dst += 4;
+		src += 6;
+	}
+}
+
+static void convert_yuyv_buf_to_rgb24( unsigned char * dst, unsigned char * src, size_t pixel_count )
+{
+	int i;
+	pixel_count >>= 1;
+	for( i = 0; i < pixel_count; i++ ){
+		yuyv_to_rgb24(dst,src);
+		dst+=6;
+		src+=4;
+	}
+}
+
+void submit_copy_buffer( struct vc_out_buffer * out_buf,
+	struct vc_in_buffer * in_buf, struct vc_device * dev )
 {
 	void * in_vbuf_ptr;
 	void * out_vbuf_ptr;
@@ -111,7 +202,17 @@ static void submit_copy_buffer( struct vc_out_buffer * out_buf,
 		PRINT_ERROR("Output buffer is NULL\n");
 		return;
 	}
-	memcpy( out_vbuf_ptr, in_vbuf_ptr, in_buf->filled );
+	if( dev->output_format.pixelformat == dev->input_format.pixelformat ){
+		memcpy( out_vbuf_ptr, in_vbuf_ptr, in_buf->filled );	
+	}else{
+		int pixel_count = dev->input_format.height * dev->input_format.width;
+		if( dev->input_format.pixelformat == V4L2_PIX_FMT_YUYV ){
+			convert_yuyv_buf_to_rgb24( out_vbuf_ptr, in_vbuf_ptr, pixel_count );
+		}else{
+			convert_rgb24_buf_to_yuyv( out_vbuf_ptr, in_vbuf_ptr, pixel_count );
+		}
+	}
+	
 	do_gettimeofday( &ts );
 	out_buf->vb.v4l2_buf.timestamp = ts;
 	vb2_buffer_done( &out_buf->vb, VB2_BUF_STATE_DONE );
@@ -160,7 +261,7 @@ int submitter_thread( void * data )
 				PRINT_ERROR("Ready buffer in input queue has NULL pointer\n");
 				goto unlock_and_continue;
 			}
-			submit_copy_buffer( buf, in_buf );
+			submit_copy_buffer( buf, in_buf, dev );
 			unlock_and_continue:
 			spin_unlock_irqrestore( &dev->in_q_slock, flags);
 		}
@@ -315,6 +416,7 @@ struct vc_device * create_vcdevice(size_t idx, struct vcmod_device_spec * dev_sp
 	//Setup conversion capabilities
 
 	//vcdev->conv_res_on = 1;	
+	vcdev->conv_pixfmt_on = 1;
 
 	//Alloc and set initial format
 	if( vcdev->conv_pixfmt_on ){
@@ -339,7 +441,7 @@ struct vc_device * create_vcdevice(size_t idx, struct vcmod_device_spec * dev_sp
 
 	//Init input 
 	ret = vc_in_queue_setup( &vcdev->in_queue ,
-		vcdev->output_format.sizeimage );
+		vcdev->input_format.sizeimage );
 	if( ret ){
 		PRINT_ERROR("Failed to initialize input buffer\n");
 		goto input_buffer_failure;

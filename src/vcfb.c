@@ -94,7 +94,7 @@ static ssize_t vcfb_write( struct file * file, const char __user * buffer, size_
 	unsigned long flags = 0;
 	void * data;
 
-	PRINT_DEBUG("Write %ld Bytes req\n", (long)length);
+	//PRINT_DEBUG("Write %ld Bytes req\n", (long)length);
 
 	dev = file->private_data;
 	if( !dev ){
@@ -130,7 +130,7 @@ static ssize_t vcfb_write( struct file * file, const char __user * buffer, size_
 
 	copy_from_user( data + buf->filled, (void *) buffer, to_be_copyied );
 	buf->filled += to_be_copyied;
-	PRINT_DEBUG("Received %d/%d B\n", (int)buf->filled, (int)waiting_bytes);
+	//PRINT_DEBUG("Received %d/%d B\n", (int)buf->filled, (int)waiting_bytes);
 
 	if ( buf->filled == waiting_bytes ){
 		spin_lock_irqsave( &dev->in_q_slock, flags );

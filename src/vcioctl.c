@@ -27,7 +27,7 @@ int vcdev_enum_input( struct file * file, void * priv,
         return -EINVAL;
     
     inp->type = V4L2_INPUT_TYPE_CAMERA;
-    //sprintf(inp->name,"vc_in %u", inp->index );
+    sprintf(inp->name,"vc_in %u", inp->index );
     return 0;
 }
 
@@ -137,13 +137,11 @@ int vcdev_s_fmt_vid_cap( struct file * file, void * priv,
         return -EBUSY;
     }
 
-    return 0;
-
     ret = vcdev_try_fmt_vid_cap( file, priv, f);
     if ( ret < 0 )
          return ret;
 
-    dev->output_format = f->fmt.pix; 
+    memcpy( &dev->output_format, &f->fmt.pix, sizeof( struct v4l2_pix_format )); 
     return 0;
 }
 
