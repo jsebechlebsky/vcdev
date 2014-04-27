@@ -11,7 +11,26 @@ MODULE_DESCRIPTION("Virtual V4L2 Device driver module");
 #define CTRL_DEV_NAME "vcdev"
 #define VC_DEV_NAME "virtualcam"
 
-int devices_max = 8;
+unsigned short devices_max = 8;
+unsigned short create_devices = 1;
+unsigned char  allow_pix_conversion = 1;
+unsigned char  allow_scaling = 1;
+
+
+module_param( devices_max, ushort, 0 );
+MODULE_PARM_DESC( devices_max, "Maximal number of devices\n");
+
+module_param( create_devices, ushort, 0);
+MODULE_PARM_DESC( create_devices, "Number of devices to be created during initialization\n");
+
+module_param( allow_pix_conversion, byte, 0);
+MODULE_PARM_DESC( allow_pix_conversion, "Allow pixel format conversion by default\n");
+
+module_param( allow_scaling, byte, 0);
+MODULE_PARM_DESC( allow_scaling, "Allow image scaling by default\n");
+
+
+
 const char * vc_dev_name = VC_DEV_NAME;
 const char * vc_driver_name = VC_DEV_NAME;
 
@@ -25,7 +44,7 @@ static int __init vcdev_init(void)
     	goto error_creating_ctrldev;
     }
 
-    for( i = 0; i < 1; i++ ){
+    for( i = 0; i < create_devices; i++ ){
         create_new_vcdevice( NULL );
     }
 

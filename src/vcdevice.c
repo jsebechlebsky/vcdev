@@ -9,6 +9,8 @@
 #include "debug.h"
 
 extern const char * vc_dev_name;
+extern unsigned char allow_pix_conversion;
+extern unsigned char allow_scaling;
 
 struct __attribute__ ((__packed__)) rgb_struct{
 	unsigned char r;
@@ -555,8 +557,8 @@ struct vc_device * create_vcdevice(size_t idx, struct vcmod_device_spec * dev_sp
 
 	//Setup conversion capabilities
 
-	vcdev->conv_res_on = 1;	
-	vcdev->conv_pixfmt_on = 1;
+	vcdev->conv_res_on = allow_scaling;	
+	vcdev->conv_pixfmt_on = allow_pix_conversion;
 
 	//Alloc and set initial format
 	if( vcdev->conv_pixfmt_on ){
