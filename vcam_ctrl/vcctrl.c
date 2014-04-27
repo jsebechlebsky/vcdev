@@ -6,11 +6,13 @@
 #include <fcntl.h>
 #include "../src/vcmod_api.h"
 
-const char * short_options = "hcs:p:d";
+const char * short_options = "hcm:ls:p:d";
 
 const struct option long_options[] = {
 	{ "help",       0, NULL, 'h' },
 	{ "create",     0, NULL, 'c' },
+	{ "modify",     1, NULL, 'm' },
+	{ "list"  ,     0, NULL, 'l' },
 	{ "size",       1, NULL, 's' },
 	{ "pixfmt",     1, NULL, 'p' },
 	{ "device",     1, NULL, 'd' },
@@ -19,6 +21,8 @@ const struct option long_options[] = {
 
 const char * help = " -h --help                    print this informations\n"
                     " -c --create                  create new device\n"
+                    " -m --modify  idx             modify device"
+                    " -l --list                    list devices\n"
                     " -s --size    WIDTHxHEIGHT    specify resolution\n"
                     " -p --pixfmt  pix_fmt         pixel format (rgb24,yuv)\n"
                     " -d --device  /dev/*          control device node\n";
@@ -28,6 +32,9 @@ enum ACTION { ACTION_NONE, ACTION_CREATE, ACTION_DESTROY, ACTION_MODIFY };
 struct vcmod_device_spec device_template = {
 	.width  = 640,
 	.height = 480,
+	.pix_fmt = VCMOD_PIXFMT_RGB24,
+	.video_node = "",
+	.fb_node = "",
 };
 
 char ctrl_location[128] = "/dev/vcdev";
@@ -57,8 +64,8 @@ int determine_pixfmt( char * pixfmt_str )
 {
 	if( !strncmp( pixfmt_str, "rgb24", 5) ){
 		return VCMOD_PIXFMT_RGB24;
-	}else if( !strncmp(pixfmt_str,"yuv",3) ){
-		return VCMOD_PIXFMT_YUV;
+	}else if( !strncmp(pixfmt_str,"yuyv",3) ){
+		return VCMOD_PIXFMT_YUYV;
 	}else {
 		return -1;
 	}
@@ -75,10 +82,80 @@ int create_device( struct vcmod_device_spec * dev )
 		return;
 	}
 
+	if(!dev->width || !dev->height){
+		dev->width = device_template.width;
+		dev->height = device_template.height;
+	}
+
+	if(!dev->pix_fmt){
+		dev->pix_fmt = device_template.pix_fmt;
+	}
+
 	res = ioctl(fd, VCMOD_IOCTL_CREATE_DEVICE, dev);
 
 	close( ctrl_location );
 	return res;
+}
+
+int modify_device( struct vcmod_device_spec * dev )
+{
+	int fd;
+	int res = 0;
+
+	struct vcmod_device_spec orig_dev;
+	orig_dev.idx = dev->idx;
+
+	fd = open( ctrl_location, O_RDWR );
+	if( fd == -1 ){
+		fprintf(stderr,"Failed to open %s device\n",ctrl_location);
+		return -1;
+	}
+
+	if( ioctl(fd, VCMOD_IOCTL_GET_DEVICE, &orig_dev)){
+		fprintf(stderr, "No device with index %d\n", orig_dev.idx + 1);
+		return -1;
+	}
+
+	if(!dev->width || !dev->height){
+		dev->width = orig_dev.width;
+		dev->height = orig_dev.height;
+	}
+
+	if(!dev->pix_fmt){
+		dev->pix_fmt = orig_dev.pix_fmt;
+	}
+
+	res = ioctl( fd, VCMOD_IOCTL_MODIFY_SETTING, dev );
+	printf("Setting modified\n");
+
+	close(fd);
+
+	return res;
+}
+
+int list_devices()
+{
+	int fd;
+	struct vcmod_device_spec dev;
+	int idx;
+
+	fd = open( ctrl_location, O_RDWR );
+	if( fd == -1 ){
+		fprintf(stderr,"Failed to open %s device\n",ctrl_location);
+		return -1;
+	}
+
+	printf("Virtual V4L2 devices:\n");
+	dev.idx = 0;
+	while( !ioctl(fd, VCMOD_IOCTL_GET_DEVICE, &dev) ){
+		dev.idx++;
+		printf("%d. %s(%d,%d,%s) -> %s\n",
+			dev.idx, dev.fb_node, dev.width, dev.height, 
+			dev.pix_fmt == VCMOD_PIXFMT_RGB24 ? "rgb24":"yuyv",
+			dev.video_node);
+	}
+	close(fd);
+	return 0;
 }
 
 int main( int argc, char * argv[])
@@ -91,6 +168,7 @@ int main( int argc, char * argv[])
     int tmp;
 
 	program_name = argv[0];
+	memset(&dev, 0x00, sizeof(struct vcmod_device_spec));
 
 	//Process cmd line options
 	do{
@@ -102,6 +180,13 @@ int main( int argc, char * argv[])
 			case 'c':
 				current_action = ACTION_CREATE;
 				printf("A new device will be created\n");
+				break;
+			case 'm':
+				current_action = ACTION_MODIFY;
+				dev.idx = atoi(optarg) - 1;
+				break;
+			case 'l':
+				list_devices();
 				break;
 			case 's':
 				if(parse_resolution(optarg,&dev)){
@@ -129,6 +214,9 @@ int main( int argc, char * argv[])
 	switch(current_action){
 		case ACTION_CREATE:
 			ret = create_device( &dev );
+			break;
+		case ACTION_MODIFY:
+			ret = modify_device( &dev );
 			break;
 	}
 
