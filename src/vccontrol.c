@@ -6,6 +6,7 @@
 #include <linux/uaccess.h>
 #include "vcdevice.h"
 #include "vccontrol.h"
+#include "vcvideobuf.h"
 #include "debug.h"
 #include "vcmod_api.h"
 
@@ -67,6 +68,79 @@ static ssize_t ctrl_write( struct file * file, const char __user * buffer,
 	return length;
 }
 
+static int ctrl_ioctl_get_device( struct vcmod_device_spec * dev_spec )
+{
+	struct vc_device * dev;
+	if( ctrldev->vc_device_count <= dev_spec->idx ){
+		return -EINVAL;
+	}
+
+	dev = ctrldev->vc_devices[dev_spec->idx];
+	dev_spec->width = dev->input_format.width;
+	dev_spec->height = dev->input_format.height;
+	if( dev->input_format.pixelformat == V4L2_PIX_FMT_YUYV ){
+		dev_spec->pix_fmt = VCMOD_PIXFMT_YUYV;
+	}else {
+		dev_spec->pix_fmt = VCMOD_PIXFMT_RGB24;
+	}
+	strncpy( (char *)&dev_spec->fb_node, (const char *)&dev->vc_fb_fname, sizeof(dev_spec->fb_node) );
+	snprintf( (char *)&dev_spec->video_node, sizeof(dev_spec->video_node),
+		"/dev/video%d",dev->vdev.minor);
+	return 0;
+}
+
+static int ctrl_ioctl_modify_input_setting( struct vcmod_device_spec * dev_spec )
+{
+	struct vc_device * dev;
+	unsigned long flags = 0;
+
+	if( ctrldev->vc_device_count <= dev_spec->idx ){
+		return -EINVAL;
+	}
+
+	dev = ctrldev->vc_devices[dev_spec->idx];
+
+	spin_lock_irqsave( &dev->in_fh_slock , flags );
+	if( dev->fb_isopen ){
+		spin_unlock_irqrestore( &dev->in_fh_slock , flags );
+		return -EBUSY;
+	}
+	dev->fb_isopen = 1;
+	spin_unlock_irqrestore( &dev->in_fh_slock , flags);
+
+	if( dev_spec->width && dev_spec->height ){
+		dev->input_format.width  = dev_spec->width;
+		dev->input_format.height = dev_spec->height;
+	}
+
+	if( dev_spec->pix_fmt == VCMOD_PIXFMT_YUYV ){
+		dev->input_format.pixelformat = V4L2_PIX_FMT_YUYV;
+	}else if(dev_spec->pix_fmt == VCMOD_PIXFMT_RGB24){
+		dev->input_format.pixelformat = V4L2_PIX_FMT_RGB24;
+	}
+
+	if( dev->input_format.pixelformat == V4L2_PIX_FMT_YUYV ){
+		dev->input_format.colorspace  = V4L2_COLORSPACE_SMPTE170M;
+		dev->input_format.bytesperline = dev_spec->width << 1;
+	}else{
+		dev->input_format.colorspace  = V4L2_COLORSPACE_SRGB;
+		dev->input_format.bytesperline = dev_spec->width * 3;
+	}
+	dev->input_format.sizeimage = 
+		dev->input_format.bytesperline * dev_spec->height;
+
+	spin_lock_irqsave( &dev->in_q_slock, flags );
+	vc_in_queue_destroy( &dev->in_queue );
+	vc_in_queue_setup(  &dev->in_queue , dev->input_format.sizeimage );
+	spin_unlock_irqrestore( &dev->in_q_slock, flags );
+
+	spin_lock_irqsave( &dev->in_fh_slock , flags );
+	dev->fb_isopen = 0;
+	spin_unlock_irqrestore( &dev->in_fh_slock , flags);
+	return 0;
+
+}
+
 static long ctrl_ioctl( struct file * file, unsigned int ioctl_cmd,
 							 unsigned long ioctl_param )
 {
@@ -76,7 +150,8 @@ static long ctrl_ioctl( struct file * file, unsigned int ioctl_cmd,
 	ret = 0;
 	PRINT_DEBUG( "ioctl\n" );
 
-	copy_from_user( &dev_spec, ( void __user * ) ioctl_param, sizeof(struct vcmod_device_spec) );
+	copy_from_user( &dev_spec, ( void __user * ) ioctl_param,
+	 	sizeof(struct vcmod_device_spec) );
 
 	switch( ioctl_cmd ){
 		case VCMOD_IOCTL_CREATE_DEVICE:
@@ -84,7 +159,19 @@ static long ctrl_ioctl( struct file * file, unsigned int ioctl_cmd,
 			create_new_vcdevice( &dev_spec );
 			break;
 		case VCMOD_IOCTL_DESTROY_DEVICE:
-			PRINT_DEBUG("Rquesting destroy of device\n");
+			PRINT_DEBUG("Requesting destroy of device\n");
+			break;
+		case VCMOD_IOCTL_GET_DEVICE:
+			PRINT_DEBUG("Get device(%d)\n",dev_spec.idx);
+			ret = ctrl_ioctl_get_device( &dev_spec );
+			if(!ret){
+				copy_to_user( (void * __user *) ioctl_param, &dev_spec,
+					sizeof(struct vcmod_device_spec) );
+			}
+			break;
+		case VCMOD_IOCTL_MODIFY_SETTING:
+			PRINT_DEBUG("Modify setting(%d)\n",dev_spec.idx);
+			ctrl_ioctl_modify_input_setting( &dev_spec );
 			break;
 		default:
 			ret = -1;
