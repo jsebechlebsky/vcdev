@@ -109,6 +109,26 @@ static inline void yuyv_to_rgb24( void *dst, void *src )
 	rgb[5] = (unsigned char) b;
 }
 
+static inline void yuyv_to_rgb24_one_pix( void *dst, void *src, unsigned char even)
+{
+	unsigned char * rgb  = ( unsigned char * ) dst;
+	unsigned char * yuyv = ( unsigned char * ) src;
+	int16_t r,g,b,c,d,e;
+	 c = even ? yuyv[0] - 16 : yuyv[2] - 16;
+	 d = yuyv[1] - 128;
+     e = yuyv[3] - 128;
+
+	r = (298 * c + 409 * e + 128) >> 8;
+	g = (298 * c - 100 * d - 208 * e + 128) >> 8;
+	b = (298 * c + 516 * d + 128) >> 8;
+	r = r > 255 ? 255 : r; r = r < 0 ? 0 : r;
+	g = g > 255 ? 255 : g; g = g < 0 ? 0 : g;
+	b = b > 255 ? 255 : b; b = b < 0 ? 0 : b;
+	rgb[0] = (unsigned char) r;
+	rgb[1] = (unsigned char) g;
+	rgb[2] = (unsigned char) b;
+}
+
 void submit_noinput_buffer(struct vc_out_buffer * buf, 
 	struct vc_device * dev)
 {
@@ -178,10 +198,6 @@ void copy_scale( unsigned char * dst, unsigned char * src, struct vc_device * de
 	uint32_t ratio_height = ( (src_height << 16) / dst_height) + 1;
 	uint32_t ratio_width;
 	int i,j,tmp1,tmp2;
-
-	PRINT_DEBUG("Scaling from %dB to %dB, s=%ld\n", 
-		dev->input_format.sizeimage, dev->output_format.sizeimage,
-		sizeof(struct rgb_struct));
 	
 	if( dev->output_format.pixelformat == V4L2_PIX_FMT_YUYV ){
 		
@@ -210,7 +226,55 @@ void copy_scale( unsigned char * dst, unsigned char * src, struct vc_device * de
 				yuyv_dst[ (i*dst_width) + j] = yuyv_src[ (tmp1*src_width) + tmp2];
 			}
 		}
-		
+
+	}
+}
+
+void copy_scale_rgb24_to_yuyv( unsigned char * dst, unsigned char * src, struct vc_device * dev )
+{
+	uint32_t dst_height = dev->output_format.height;
+	uint32_t dst_width  = dev->output_format.width;
+	uint32_t src_height = dev->input_format.height;
+	uint32_t src_width  = dev->input_format.width;
+	uint32_t ratio_height = ( (src_height << 16) / dst_height) + 1;
+	uint32_t ratio_width;
+	int i,j,tmp1,tmp2;
+
+	uint32_t * yuyv_dst = (uint32_t *)dst;
+	struct rgb_struct * rgb_src = (struct rgb_struct *)src;
+	dst_width >>= 1;
+	src_width >>= 1;
+	ratio_width  = ( (src_width  << 16) / dst_width ) + 1;
+	for( i = 0; i < dst_height; i++ ){
+		tmp1 = ((i*ratio_height) >> 16);
+		for( j = 0; j < dst_width; j++ ){
+			tmp2 = ((j*ratio_width) >> 16);
+			rgb24_to_yuyv(yuyv_dst, &rgb_src[tmp1*(src_width << 1) + (tmp2 << 1)]);
+			yuyv_dst++;
+		}
+	}
+}
+
+void copy_scale_yuyv_to_rgb24( unsigned char * dst, unsigned char * src, struct vc_device * dev)
+{
+	uint32_t dst_height = dev->output_format.height;
+	uint32_t dst_width  = dev->output_format.width;
+	uint32_t src_height = dev->input_format.height;
+	uint32_t src_width  = dev->input_format.width;
+	uint32_t ratio_height = ( (src_height << 16) / dst_height) + 1;
+	uint32_t ratio_width  = ( (src_width  << 16) / dst_width ) + 1;
+	int i,j,tmp1,tmp2;
+
+	struct rgb_struct * rgb_dst = (struct rgb_struct *)dst;
+	int32_t * yuyv_src = (int32_t *) src;
+	for( i = 0; i < dst_height; i++ ){
+		tmp1 = ((i*ratio_height) >> 16);
+		for( j = 0; j < dst_width; j++ ){
+			tmp2 = ((j*ratio_width) >> 16);
+			yuyv_to_rgb24_one_pix(rgb_dst, 
+				&yuyv_src[tmp1*(src_width >> 1) + (tmp2 >> 1)], tmp2 & 0x01);
+			rgb_dst++;
+		}
 	}
 }
 
@@ -268,12 +332,25 @@ void submit_copy_buffer( struct vc_out_buffer * out_buf,
 			}	
 
 	}else {
-		int pixel_count = dev->input_format.height * dev->input_format.width;
-		if( dev->input_format.pixelformat == V4L2_PIX_FMT_YUYV ){
-			convert_yuyv_buf_to_rgb24( out_vbuf_ptr, in_vbuf_ptr, pixel_count );
+		if(dev->output_format.width == dev->input_format.width &&
+			dev->output_format.height == dev->input_format.height ){
+
+				int pixel_count = dev->input_format.height * dev->input_format.width;
+				if( dev->input_format.pixelformat == V4L2_PIX_FMT_YUYV ){
+					convert_yuyv_buf_to_rgb24( out_vbuf_ptr, in_vbuf_ptr, pixel_count );
+				}else{
+					convert_rgb24_buf_to_yuyv( out_vbuf_ptr, in_vbuf_ptr, pixel_count );
+				}
+
 		}else{
-			convert_rgb24_buf_to_yuyv( out_vbuf_ptr, in_vbuf_ptr, pixel_count );
-		}
+
+				if( dev->output_format.pixelformat == V4L2_PIX_FMT_YUYV ){
+					copy_scale_rgb24_to_yuyv( out_vbuf_ptr, in_vbuf_ptr, dev );
+				} else if( dev->output_format.pixelformat == V4L2_PIX_FMT_RGB24 ){
+					copy_scale_yuyv_to_rgb24( out_vbuf_ptr, in_vbuf_ptr, dev );
+				}
+
+		}	
 	}
 	
 	do_gettimeofday( &ts );
@@ -479,7 +556,7 @@ struct vc_device * create_vcdevice(size_t idx, struct vcmod_device_spec * dev_sp
 	//Setup conversion capabilities
 
 	vcdev->conv_res_on = 1;	
-	//vcdev->conv_pixfmt_on = 1;
+	vcdev->conv_pixfmt_on = 1;
 
 	//Alloc and set initial format
 	if( vcdev->conv_pixfmt_on ){
