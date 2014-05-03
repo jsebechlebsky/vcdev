@@ -19,8 +19,7 @@
 struct vc_in_buffer {
 	void * data;
 	size_t filled;
-	struct timeval ts;
-	int state;
+	uint32_t jiffies;
 };
 
 struct vc_in_queue {

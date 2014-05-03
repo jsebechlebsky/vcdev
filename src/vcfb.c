@@ -111,6 +111,15 @@ static ssize_t vcfb_write( struct file * file, const char __user * buffer, size_
 		PRINT_ERROR("Pending pointer set to NULL\n");
 		return 0;
 	}
+
+	PRINT_DEBUG("filled=%d jiffiesdiff=%d", buf->filled, (int32_t)jiffies - buf->jiffies);
+	//reset buffer if last write is too old
+	if( buf->filled && (((int32_t)jiffies - buf->jiffies) / HZ) ){
+		PRINT_DEBUG("Reseting jiffies, difference %d\n", ((int32_t)jiffies - buf->jiffies));
+		buf->filled = 0;
+	}
+	buf->jiffies = jiffies;
+
 	//Fill the buffer
 	//TODO real buffer handling
 	to_be_copyied = length;
@@ -124,10 +133,6 @@ static ssize_t vcfb_write( struct file * file, const char __user * buffer, size_
 		return 0;
 	}
 
-	if( !buf->filled ){
-		do_gettimeofday( &buf->ts );
-	}
-
 	copy_from_user( data + buf->filled, (void *) buffer, to_be_copyied );
 	buf->filled += to_be_copyied;
 	//PRINT_DEBUG("Received %d/%d B\n", (int)buf->filled, (int)waiting_bytes);
@@ -136,7 +141,7 @@ static ssize_t vcfb_write( struct file * file, const char __user * buffer, size_
 		spin_lock_irqsave( &dev->in_q_slock, flags );
 		swap_in_queue_buffers( in_q );
 		spin_unlock_irqrestore( &dev->in_q_slock, flags );
-		PRINT_DEBUG("Swapping buffers\n");
+		//PRINT_DEBUG("Swapping buffers\n");
 	}
 
 	return length;

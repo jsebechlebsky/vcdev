@@ -321,14 +321,14 @@ void submit_copy_buffer( struct vc_out_buffer * out_buf,
 	}
 
 	if( dev->output_format.pixelformat == dev->input_format.pixelformat ){
-
+		PRINT_DEBUG("Same pixel format\n");
 	   	if(dev->output_format.width == dev->input_format.width &&
 			dev->output_format.height == dev->input_format.height ){
-
+	   			PRINT_DEBUG("No scaling\n");
 				memcpy( out_vbuf_ptr, in_vbuf_ptr, in_buf->filled );
 
 			}else{
-
+				PRINT_DEBUG("Scaling\n");
 				copy_scale( out_vbuf_ptr, in_vbuf_ptr, dev );
 
 			}	
@@ -339,16 +339,20 @@ void submit_copy_buffer( struct vc_out_buffer * out_buf,
 
 				int pixel_count = dev->input_format.height * dev->input_format.width;
 				if( dev->input_format.pixelformat == V4L2_PIX_FMT_YUYV ){
+					PRINT_DEBUG("YUYV->RGB24 no scale\n");
 					convert_yuyv_buf_to_rgb24( out_vbuf_ptr, in_vbuf_ptr, pixel_count );
 				}else{
+					PRINT_DEBUG("RGB24->YUYV no scale\n");
 					convert_rgb24_buf_to_yuyv( out_vbuf_ptr, in_vbuf_ptr, pixel_count );
 				}
 
 		}else{
 
 				if( dev->output_format.pixelformat == V4L2_PIX_FMT_YUYV ){
+					PRINT_DEBUG("RGB24->YUYV scale\n");
 					copy_scale_rgb24_to_yuyv( out_vbuf_ptr, in_vbuf_ptr, dev );
 				} else if( dev->output_format.pixelformat == V4L2_PIX_FMT_RGB24 ){
+					PRINT_DEBUG("RGB24->YUYV scale\n");
 					copy_scale_yuyv_to_rgb24( out_vbuf_ptr, in_vbuf_ptr, dev );
 				}
 

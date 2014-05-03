@@ -126,7 +126,7 @@ int vc_out_queue_setup( struct vb2_queue * vq,
     PRINT_DEBUG("sizeimage set to %ld\n",size);
    
     if( 0 == *nbuffers )
-        *nbuffers = 8;
+        *nbuffers = 2;
  
     *nplanes = 1;
     
