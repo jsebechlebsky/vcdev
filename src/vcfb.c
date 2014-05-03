@@ -80,6 +80,7 @@ static int vcfb_release( struct inode * ind, struct file * file )
 	spin_lock_irqsave( &dev->in_fh_slock , flags );
 	dev->fb_isopen = 0;
 	spin_unlock_irqrestore( &dev->in_fh_slock , flags );
+	dev->in_q->pending->filled = 0;
 	return 0;
 }
 
