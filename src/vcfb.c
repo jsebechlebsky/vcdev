@@ -26,7 +26,7 @@ struct proc_dir_entry* init_framebuffer( const char * proc_fname, struct vc_devi
 	ret = 0;
 
 	PRINT_DEBUG( "Creating framebuffer for /dev/%s\n" ,proc_fname );
-	procf = proc_create_data( proc_fname, 0644, NULL , &vcfb_fops, dev );
+	procf = proc_create_data( proc_fname, 0766, NULL , &vcfb_fops, dev );
 	if( !procf ){
 		PRINT_ERROR("Failed to create procfs entry\n");
 		ret = -ENODEV;
@@ -80,7 +80,7 @@ static int vcfb_release( struct inode * ind, struct file * file )
 	spin_lock_irqsave( &dev->in_fh_slock , flags );
 	dev->fb_isopen = 0;
 	spin_unlock_irqrestore( &dev->in_fh_slock , flags );
-	dev->in_q->pending->filled = 0;
+	dev->in_queue.pending->filled = 0;
 	return 0;
 }
 
@@ -113,7 +113,6 @@ static ssize_t vcfb_write( struct file * file, const char __user * buffer, size_
 		return 0;
 	}
 
-	PRINT_DEBUG("filled=%d jiffiesdiff=%d", buf->filled, (int32_t)jiffies - buf->jiffies);
 	//reset buffer if last write is too old
 	if( buf->filled && (((int32_t)jiffies - buf->jiffies) / HZ) ){
 		PRINT_DEBUG("Reseting jiffies, difference %d\n", ((int32_t)jiffies - buf->jiffies));
@@ -145,5 +144,5 @@ static ssize_t vcfb_write( struct file * file, const char __user * buffer, size_
 		//PRINT_DEBUG("Swapping buffers\n");
 	}
 
-	return length;
+	return to_be_copyied;
 }

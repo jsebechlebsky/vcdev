@@ -139,11 +139,6 @@ int vc_out_buffer_prepare( struct vb2_buffer * vb )
 {
     unsigned long size;
     struct vc_device * dev;
-    //void * data;
-    //char color;
-    //int i;
-
-    //PRINT_DEBUG( "buffer_prepare\n");
     
     dev = vb2_get_drv_priv( vb->vb2_queue );
 
@@ -154,19 +149,6 @@ int vc_out_buffer_prepare( struct vb2_buffer * vb )
     }
 
     vb2_set_plane_payload(vb,0,size);
-    /*data = (void*)vb2_plane_vaddr(vb,0);
-    if(!data){
-      PRINT_DEBUG( "Strange thing happened in the buffer prepare\n");
-      goto error;
-    }
-    color = 0xff;
-    for( i = 0; i < 240; i++){
-    	memset(data,color,640*2*3); //set to white color
-    	color--;
-    	data+=640*2*3;
-    }
-    
-    error:*/
     return 0;
 }
 
@@ -227,14 +209,14 @@ int vc_stop_streaming( struct vb2_queue * vb2_q )
 
     dev->sub_thr_id = NULL;
     //Empty buffer queue
-    //spin_lock_irqsave( &dev->out_q_slock, flags );
+    spin_lock_irqsave( &dev->out_q_slock, flags );
     while ( !list_empty( &q->active ) ) {
             buf = list_entry( q->active.next, struct vc_out_buffer , list);
             list_del( &buf->list );
             vb2_buffer_done( &buf->vb, VB2_BUF_STATE_ERROR);
             PRINT_DEBUG("Throwing out buffer\n");
     }
-    //spin_unlock_irqrestore( &dev->out_q_slock, flags );
+    spin_unlock_irqrestore( &dev->out_q_slock, flags );
 
     return 0;
 }

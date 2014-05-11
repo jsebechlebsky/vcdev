@@ -78,6 +78,10 @@ static inline void rgb24_to_yuyv( void *dst, void *src )
 	yuyv[1] = ((-38 * rgb[0] -  74 * rgb[1] + 112 * rgb[2]) >> 8) + 128;
 	yuyv[2] = (( 66 * rgb[3] + 129 * rgb[4] +  25 * rgb[5]) >> 8) + 16;
 	yuyv[3] = ((112 * rgb[0] -  94 * rgb[1] -  18 * rgb[2]) >> 8) + 128;
+	yuyv[0] = yuyv[0] > 240 ? 240 : yuyv[0]; yuyv[0] = yuyv[0] < 16 ? 16 : yuyv[0];
+	yuyv[1] = yuyv[1] > 235 ? 235 : yuyv[1]; yuyv[1] = yuyv[1] < 16 ? 16 : yuyv[1]; 
+	yuyv[2] = yuyv[2] > 240 ? 240 : yuyv[2]; yuyv[2] = yuyv[2] < 16 ? 16 : yuyv[2]; 
+	yuyv[3] = yuyv[3] > 235 ? 235 : yuyv[3]; yuyv[3] = yuyv[3] < 16 ? 16 : yuyv[3]; 
 }
 
 static inline void yuyv_to_rgb24( void *dst, void *src )
@@ -85,14 +89,14 @@ static inline void yuyv_to_rgb24( void *dst, void *src )
 	unsigned char * rgb  = ( unsigned char * ) dst;
 	unsigned char * yuyv = ( unsigned char * ) src;
 	int16_t r,g,b,c1,c2,d,e;
-	c1 = yuyv[0] - 16;
+	c2 = yuyv[0] - 16;
 	 d = yuyv[1] - 128;
-	c2 = yuyv[2] - 16;
+	c1 = yuyv[2] - 16;
      e = yuyv[3] - 128;
 
-	r = (298 * c1 + 409 * e + 128) >> 8;
-	g = (298 * c1 - 100 * d - 208 * e + 128) >> 8;
-	b = (298 * c1 + 516 * d + 128) >> 8;
+	r = (298 * c1 + 409 * e ) >> 8;
+	g = (298 * c1 - 100 * d - 208 * e ) >> 8;
+	b = (298 * c1 + 516 * d ) >> 8;
 	r = r > 255 ? 255 : r; r = r < 0 ? 0 : r;
 	g = g > 255 ? 255 : g; g = g < 0 ? 0 : g;
 	b = b > 255 ? 255 : b; b = b < 0 ? 0 : b;
@@ -100,9 +104,9 @@ static inline void yuyv_to_rgb24( void *dst, void *src )
 	rgb[1] = (unsigned char) g;
 	rgb[2] = (unsigned char) b;
 
-	r = (298 * c2 + 409 * e + 128) >> 8;
-	g = (298 * c2 - 100 * d - 208 * e + 128) >> 8;
-	b = (298 * c2 + 516 * d + 128) >> 8;
+	r = (298 * c2 + 409 * e ) >> 8;
+	g = (298 * c2 - 100 * d - 208 * e ) >> 8;
+	b = (298 * c2 + 516 * d ) >> 8;
 	r = r > 255 ? 255 : r; r = r < 0 ? 0 : r;
 	g = g > 255 ? 255 : g; g = g < 0 ? 0 : g;
 	b = b > 255 ? 255 : b; b = b < 0 ? 0 : b;
@@ -383,10 +387,8 @@ int submitter_thread( void * data )
 
 	PRINT_DEBUG("Submitter thread started");
 
-	while(1){
+	while(!kthread_should_stop()){
 		//Do something and sleep
-
-		//PRINT_DEBUG("tick");
 
 		spin_lock_irqsave( &dev->out_q_slock, flags );
 		if ( list_empty( &q->active ) ){
@@ -426,10 +428,6 @@ int submitter_thread( void * data )
 			//PRINT_DEBUG("sleep %d\n",timeout_ms);
 			timeout = msecs_to_jiffies( timeout_ms );
 			schedule_timeout_interruptible(timeout);
-
-			if( kthread_should_stop() ){
-				break;
-			} 
 	}
 
 	PRINT_DEBUG("Submitter thread finished");

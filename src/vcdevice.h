@@ -65,6 +65,7 @@ struct vc_device {
     //Output framerate
     struct v4l2_fract         output_fps;
 
+    //Input framebuffer
     char                      vc_fb_fname[FB_NAME_MAXLENGTH];
     struct proc_dir_entry*    vc_fb_procf;
     struct mutex              vc_mutex;
@@ -80,8 +81,8 @@ struct vc_device {
     struct v4l2_pix_format    input_format; 
 
     //Conversion switches
-    int                       conv_pixfmt_on;
-    int                       conv_res_on;    
+    unsigned char             conv_pixfmt_on;
+    unsigned char             conv_res_on;    
 };
 
 struct vc_device * create_vcdevice( size_t idx, struct vcmod_device_spec * dev_spec );
