@@ -132,6 +132,9 @@ static int ctrl_ioctl_modify_input_setting( struct vcmod_device_spec * dev_spec 
 	spin_lock_irqsave( &dev->in_q_slock, flags );
 	vc_in_queue_destroy( &dev->in_queue );
 	vc_in_queue_setup(  &dev->in_queue , dev->input_format.sizeimage );
+
+	PRINT_DEBUG("Input format set (%dx%d)(%dx%d)\n",dev_spec->width,dev_spec->height,
+		dev->input_format.width,dev->input_format.height);
 	spin_unlock_irqrestore( &dev->in_q_slock, flags );
 
 	spin_lock_irqsave( &dev->in_fh_slock , flags );

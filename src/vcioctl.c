@@ -107,6 +107,7 @@ int vcdev_try_fmt_vid_cap( struct file * file, void * priv,
                             &f->fmt.pix.height, 64, 720, 0, 0);*/
 
      if( !dev->conv_res_on ){
+            PRINT_DEBUG("Resolution conversion is %d\n",dev->conv_res_on);
             f->fmt.pix.width = dev->output_format.width;
             f->fmt.pix.height = dev->output_format.height;
      }
@@ -143,8 +144,9 @@ int vcdev_s_fmt_vid_cap( struct file * file, void * priv,
     ret = vcdev_try_fmt_vid_cap( file, priv, f);
     if ( ret < 0 )
          return ret;
-
-    memcpy( &dev->output_format, &f->fmt.pix, sizeof( struct v4l2_pix_format )); 
+    dev->output_format = f->fmt.pix;
+    PRINT_DEBUG("Resolution set to %dx%d\n",dev->output_format.width, dev->output_format.height );
+    //memcpy( &dev->output_format, &f->fmt.pix, sizeof( struct v4l2_pix_format )); 
     return 0;
 }
 

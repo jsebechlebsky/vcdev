@@ -326,6 +326,8 @@ void submit_copy_buffer( struct vc_out_buffer * out_buf,
 
 	if( dev->output_format.pixelformat == dev->input_format.pixelformat ){
 		PRINT_DEBUG("Same pixel format\n");
+		PRINT_DEBUG("%d,%d -> %d,%d\n",dev->output_format.width,dev->output_format.height,
+			dev->input_format.width, dev->input_format.height);
 	   	if(dev->output_format.width == dev->input_format.width &&
 			dev->output_format.height == dev->input_format.height ){
 	   			PRINT_DEBUG("No scaling\n");
@@ -546,7 +548,7 @@ struct vc_device * create_vcdevice(size_t idx, struct vcmod_device_spec * dev_sp
 
 	//Initialize framebuffer device
 	snprintf(vcdev->vc_fb_fname, sizeof(vcdev->vc_fb_fname),
-		"%s_%d_fb",vc_dev_name, (int)idx );
+		"vcfb%d", MINOR(vcdev->vdev.dev.devt) );
 
 	pde = init_framebuffer( (const char *) vcdev->vc_fb_fname , vcdev );
 	if ( !pde ){
@@ -561,6 +563,7 @@ struct vc_device * create_vcdevice(size_t idx, struct vcmod_device_spec * dev_sp
 
 	vcdev->conv_res_on = allow_scaling;	
 	vcdev->conv_pixfmt_on = allow_pix_conversion;
+	PRINT_DEBUG("%d %d\n",vcdev->conv_res_on,vcdev->conv_pixfmt_on);
 
 	//Alloc and set initial format
 	if( vcdev->conv_pixfmt_on ){

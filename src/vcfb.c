@@ -26,7 +26,7 @@ struct proc_dir_entry* init_framebuffer( const char * proc_fname, struct vc_devi
 	ret = 0;
 
 	PRINT_DEBUG( "Creating framebuffer for /dev/%s\n" ,proc_fname );
-	procf = proc_create_data( proc_fname, 0766, NULL , &vcfb_fops, dev );
+	procf = proc_create_data( proc_fname, 0666, NULL , &vcfb_fops, dev );
 	if( !procf ){
 		PRINT_ERROR("Failed to create procfs entry\n");
 		ret = -ENODEV;
