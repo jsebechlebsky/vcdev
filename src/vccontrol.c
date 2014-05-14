@@ -36,6 +36,8 @@ extern int devices_max;
 
 struct control_device * ctrldev = NULL;
 
+inline void destroy_control_device( struct control_device * dev );
+
 static int ctrl_open( struct inode * inode, struct file * file)
 {
 	PRINT_DEBUG("open\n");
@@ -144,6 +146,38 @@ static int ctrl_ioctl_modify_input_setting( struct vcmod_device_spec * dev_spec 
 
 }
 
+static int ctrl_ioctl_destroy_device( struct vcmod_device_spec * dev_spec )
+{
+	struct vc_device * dev;
+	unsigned long flags = 0;
+    int i;
+
+	if( ctrldev->vc_device_count <= dev_spec->idx ){
+		return -EINVAL;
+	}
+
+	dev = ctrldev->vc_devices[ dev_spec->idx ];
+
+	spin_lock_irqsave( &dev->in_fh_slock, flags );
+	if( dev->fb_isopen || vb2_is_busy(&dev->vb_out_vidq)){
+		spin_unlock_irqrestore( &dev->in_fh_slock, flags );
+		return -EBUSY;
+	}
+	dev->fb_isopen = 1;
+	spin_unlock_irqrestore( &dev->in_fh_slock, flags);
+
+	spin_lock_irqsave( &ctrldev->vc_devices_lock, flags);
+	for( i = dev_spec->idx; i < (ctrldev->vc_device_count); i++){
+		ctrldev->vc_devices[i] = ctrldev->vc_devices[i+1];
+	}
+	ctrldev->vc_devices[ --ctrldev->vc_device_count ] = NULL;
+	spin_unlock_irqrestore( &ctrldev->vc_devices_lock, flags);
+
+	destroy_vcdevice(dev);
+
+	return 0;
+}
+
 static long ctrl_ioctl( struct file * file, unsigned int ioctl_cmd,
 							 unsigned long ioctl_param )
 {
@@ -159,10 +193,11 @@ static long ctrl_ioctl( struct file * file, unsigned int ioctl_cmd,
 	switch( ioctl_cmd ){
 		case VCMOD_IOCTL_CREATE_DEVICE:
 			PRINT_DEBUG("Requesing new device\n");
-			create_new_vcdevice( &dev_spec );
+			ret = create_new_vcdevice( &dev_spec );
 			break;
 		case VCMOD_IOCTL_DESTROY_DEVICE:
-			PRINT_DEBUG("Requesting destroy of device\n");
+			PRINT_DEBUG("Requesting removal of device\n");
+			ret = ctrl_ioctl_destroy_device( &dev_spec );
 			break;
 		case VCMOD_IOCTL_GET_DEVICE:
 			PRINT_DEBUG("Get device(%d)\n",dev_spec.idx);
@@ -174,7 +209,7 @@ static long ctrl_ioctl( struct file * file, unsigned int ioctl_cmd,
 			break;
 		case VCMOD_IOCTL_MODIFY_SETTING:
 			PRINT_DEBUG("Modify setting(%d)\n",dev_spec.idx);
-			ctrl_ioctl_modify_input_setting( &dev_spec );
+			ret = ctrl_ioctl_modify_input_setting( &dev_spec );
 			break;
 		default:
 			ret = -1;
@@ -186,6 +221,7 @@ int create_new_vcdevice( struct vcmod_device_spec * dev_spec )
 {
 	struct vc_device * vcdev;
 	int idx;
+	unsigned long flags = 0;
 	PRINT_DEBUG( "creating vcdevice\n" );
 	if(! ctrldev ){
 		return -ENODEV;
@@ -205,8 +241,10 @@ int create_new_vcdevice( struct vcmod_device_spec * dev_spec )
 		return -ENODEV;
 	}
 
+	spin_lock_irqsave( &ctrldev->vc_devices_lock, flags);
 	idx = ctrldev->vc_device_count++;
 	ctrldev->vc_devices[idx] = vcdev;
+	spin_unlock_irqrestore( &ctrldev->vc_devices_lock, flags);
 	return idx;
 }
 
@@ -226,7 +264,6 @@ inline struct control_device * alloc_control_device(void)
 	memset(res->vc_devices, 0x00, sizeof(struct vc_devices *) * devices_max );
 	res->vc_device_count = 0;
 
-	sema_init(&res->reg_semaphore,1);
 	return res;
 
 	vcdev_alloc_failure:
@@ -294,6 +331,8 @@ int __init create_ctrldev(const char * dev_name)
 		ret = -ENODEV;
 		goto device_create_failure;
 	}
+
+	spin_lock_init( &ctrldev->vc_devices_lock );
 
 	return 0;
 	device_create_failure:

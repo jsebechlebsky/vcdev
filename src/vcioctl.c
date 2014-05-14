@@ -112,7 +112,7 @@ int vcdev_try_fmt_vid_cap( struct file * file, void * priv,
             f->fmt.pix.height = dev->output_format.height;
      }
 
-     f->fmt.pix.field = V4L2_FIELD_INTERLACED;
+     f->fmt.pix.field = V4L2_FIELD_NONE;
      if( f->fmt.pix.pixelformat == V4L2_PIX_FMT_YUYV ){
         f->fmt.pix.bytesperline = f->fmt.pix.width << 1;
         f->fmt.pix.colorspace   = V4L2_COLORSPACE_SMPTE170M;

@@ -3,7 +3,7 @@
 
 #include <linux/cdev.h>
 #include <linux/mutex.h>
-#include <linux/semaphore.h>
+#include <linux/spinlock.h>
 #include "vcmod_api.h"
 
 struct control_device {
@@ -14,7 +14,7 @@ struct control_device {
 	struct cdev cdev;
 	struct vc_device ** vc_devices;
 	size_t vc_device_count;
-	struct semaphore reg_semaphore;
+	spinlock_t vc_devices_lock;
 };
 
 int create_ctrldev(const char * dev_name);
