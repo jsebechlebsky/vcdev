@@ -379,6 +379,7 @@ int submitter_thread( void * data )
 	struct vc_out_buffer * buf;
 	struct vc_in_buffer * in_buf;
 	unsigned long flags;
+	int computation_time_jiff,computation_time_ms;
 	int timeout_ms;
 	int timeout;
 	int ret = 0;
@@ -391,7 +392,7 @@ int submitter_thread( void * data )
 
 	while(!kthread_should_stop()){
 		//Do something and sleep
-
+		computation_time_jiff = jiffies;
 		spin_lock_irqsave( &dev->out_q_slock, flags );
 		if ( list_empty( &q->active ) ){
 			PRINT_DEBUG("Buffer queue is empty\n");
@@ -427,9 +428,17 @@ int submitter_thread( void * data )
 				dev->output_fps.denominator = 60000;
 				timeout_ms = dev->output_fps.denominator / dev->output_fps.numerator;
 			}
-			//PRINT_DEBUG("sleep %d\n",timeout_ms);
+			
+			//Compute timeout, modify FPS
+			computation_time_jiff = jiffies - computation_time_jiff;
 			timeout = msecs_to_jiffies( timeout_ms );
-			schedule_timeout_interruptible(timeout);
+			if(computation_time_jiff > timeout ){
+				computation_time_ms = msecs_to_jiffies( computation_time_jiff );
+				dev->output_fps.numerator   = 1001;
+				dev->output_fps.denominator = 1000 * computation_time_ms;
+			}else if(timeout > computation_time_jiff){
+				schedule_timeout_interruptible(timeout - computation_time_jiff);
+			}
 	}
 
 	PRINT_DEBUG("Submitter thread finished");
