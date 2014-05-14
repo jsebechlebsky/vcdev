@@ -6,7 +6,7 @@
 #include <fcntl.h>
 #include "../src/vcmod_api.h"
 
-const char * short_options = "hcm:ls:p:d";
+const char * short_options = "hcm:r:ls:p:d:";
 
 const struct option long_options[] = {
 	{ "help",       0, NULL, 'h' },
@@ -16,12 +16,14 @@ const struct option long_options[] = {
 	{ "size",       1, NULL, 's' },
 	{ "pixfmt",     1, NULL, 'p' },
 	{ "device",     1, NULL, 'd' },
+	{ "remove",     1, NULL, 'r' },
 	{ NULL,         0, NULL,  0  }
 };
 
 const char * help = " -h --help                    print this informations\n"
                     " -c --create                  create new device\n"
-                    " -m --modify  idx             modify device"
+                    " -m --modify  idx             modify device\n"
+                    " -r --remove  idx             remove device\n"
                     " -l --list                    list devices\n"
                     " -s --size    WIDTHxHEIGHT    specify resolution\n"
                     " -p --pixfmt  pix_fmt         pixel format (rgb24,yuv)\n"
@@ -95,6 +97,26 @@ int create_device( struct vcmod_device_spec * dev )
 
 	close( ctrl_location );
 	return res;
+}
+
+int remove_device( struct vcmod_device_spec * dev )
+{
+	int fd;
+	int res = 0;
+
+	fd = open( ctrl_location, O_RDWR );
+	if( fd == -1 ){
+		fprintf(stderr, "Failed to open %s device\n", ctrl_location );
+		return -1;
+	}
+
+	if( ioctl( fd, VCMOD_IOCTL_DESTROY_DEVICE, dev) ){
+		fprintf(stderr, "Can't remove device with index %d\n", dev->idx + 1);
+		return -1;
+	}
+	close(fd);
+	printf("Device removed\n");
+	return 0;
 }
 
 int modify_device( struct vcmod_device_spec * dev )
@@ -185,6 +207,10 @@ int main( int argc, char * argv[])
 				current_action = ACTION_MODIFY;
 				dev.idx = atoi(optarg) - 1;
 				break;
+			case 'r':
+				current_action = ACTION_DESTROY;
+				dev.idx = atoi(optarg) -1;
+				break;
 			case 'l':
 				list_devices();
 				break;
@@ -214,6 +240,9 @@ int main( int argc, char * argv[])
 	switch(current_action){
 		case ACTION_CREATE:
 			ret = create_device( &dev );
+			break;
+		case ACTION_DESTROY:
+			ret = remove_device( &dev );
 			break;
 		case ACTION_MODIFY:
 			ret = modify_device( &dev );
