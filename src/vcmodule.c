@@ -29,8 +29,6 @@ MODULE_PARM_DESC( allow_pix_conversion, "Allow pixel format conversion by defaul
 module_param( allow_scaling, byte, 0);
 MODULE_PARM_DESC( allow_scaling, "Allow image scaling by default\n");
 
-
-
 const char * vc_dev_name = VC_DEV_NAME;
 const char * vc_driver_name = VC_DEV_NAME;
 
@@ -38,7 +36,6 @@ static int __init vcdev_init(void)
 {
     int ret;
     int i;
-    PRINT_DEBUG( "init\n" );
     ret = create_ctrldev(CTRL_DEV_NAME);
     if( ret ){
     	goto error_creating_ctrldev;
@@ -47,7 +44,7 @@ static int __init vcdev_init(void)
     for( i = 0; i < create_devices; i++ ){
         create_new_vcdevice( NULL );
     }
-
+    PRINT_INFO( "vcmod modul loaded\n" );
     error_creating_ctrldev:
     return ret;
 }
@@ -55,7 +52,7 @@ static int __init vcdev_init(void)
 static void __exit vcdev_exit(void)
 {
     destroy_ctrldev();
-    PRINT_DEBUG( "exit\n" );
+    PRINT_INFO( "vcmod exiting\n" );
 }
 
 module_init(vcdev_init)

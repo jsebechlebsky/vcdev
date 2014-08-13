@@ -35,13 +35,10 @@ void swap_in_queue_buffers( struct vc_in_queue * q )
     if( !q ){
         return;
     }
-    //PRINT_DEBUG("Before swap R:%lX P:%lX",(long unsigned int)q->ready,(long unsigned int) q->pending);
     tmp = q->pending;
     q->pending = q->ready;
     q->ready = tmp;
     q->pending->filled = 0;
-    //PRINT_DEBUG("After swap R:%lX P:%lX",(long unsigned int)q->ready,(long unsigned int) q->pending);
-    //PRINT_DEBUG("Buffers swapped\n");
 }
 
 int vc_in_queue_setup( struct vc_in_queue * q, size_t size )

@@ -10,5 +10,5 @@
 #endif
 	
 	#define PRINT_ERROR(arg,...) printk( KERN_ERR "VC,%s(%s):%d -> " arg, __FILE__, __FUNCTION__ , __LINE__ , ##__VA_ARGS__ )
-
+	#define PRINT_INFO(arg,...) printk( KERN_INFO "VC,%s(%s):%d -> " arg, __FILE__, __FUNCTION__ , __LINE__ , ##__VA_ARGS__ )
 #endif
